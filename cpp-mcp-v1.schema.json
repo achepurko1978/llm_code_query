@@ -1,0 +1,664 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "cpp-mcp-v1.schema.json",
+  "title": "C++ MCP v1",
+  "$defs": {
+    "Entity": {
+      "type": "string",
+      "enum": [
+        "class",
+        "struct",
+        "function",
+        "method",
+        "constructor",
+        "destructor",
+        "field",
+        "variable",
+        "parameter",
+        "call",
+        "enum",
+        "namespace",
+        "file"
+      ]
+    },
+    "Action": {
+      "type": "string",
+      "enum": [
+        "find",
+        "list",
+        "count",
+        "exists"
+      ]
+    },
+    "Access": {
+      "type": "string",
+      "enum": [
+        "public",
+        "protected",
+        "private"
+      ]
+    },
+    "Status": {
+      "type": "string",
+      "enum": [
+        "ok",
+        "error"
+      ]
+    },
+    "Warning": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "code": {
+          "type": "string"
+        },
+        "message": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "code",
+        "message"
+      ]
+    },
+    "Location": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "file": {
+          "type": "string"
+        },
+        "line": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "column": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "required": [
+        "file"
+      ]
+    },
+    "Page": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "next_cursor": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "truncated": {
+          "type": "boolean"
+        },
+        "total_matches": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "next_cursor",
+        "truncated",
+        "total_matches"
+      ]
+    },
+    "ParameterSummary": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "symbol_id": {
+          "type": "string"
+        },
+        "entity": {
+          "const": "parameter"
+        },
+        "name": {
+          "type": "string"
+        },
+        "type": {
+          "type": "string"
+        },
+        "position": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "location": {
+          "$ref": "#/$defs/Location"
+        }
+      },
+      "required": [
+        "entity",
+        "name",
+        "type",
+        "position"
+      ]
+    },
+    "RelationSummary": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "type": "string"
+        },
+        "symbol_id": {
+          "type": "string"
+        },
+        "entity": {
+          "$ref": "#/$defs/Entity"
+        },
+        "name": {
+          "type": "string"
+        },
+        "qualified_name": {
+          "type": "string"
+        },
+        "signature": {
+          "type": "string"
+        },
+        "location": {
+          "$ref": "#/$defs/Location"
+        }
+      },
+      "required": [
+        "kind",
+        "symbol_id",
+        "entity",
+        "name"
+      ]
+    },
+    "SymbolSummary": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "symbol_id": {
+          "type": "string"
+        },
+        "entity": {
+          "$ref": "#/$defs/Entity"
+        },
+        "name": {
+          "type": "string"
+        },
+        "qualified_name": {
+          "type": "string"
+        },
+        "signature": {
+          "type": "string"
+        },
+        "return_type": {
+          "type": "string"
+        },
+        "type": {
+          "type": "string"
+        },
+        "location": {
+          "$ref": "#/$defs/Location"
+        },
+        "summary": {
+          "type": "string"
+        },
+        "access": {
+          "$ref": "#/$defs/Access"
+        },
+        "static": {
+          "type": "boolean"
+        },
+        "const": {
+          "type": "boolean"
+        },
+        "virtual": {
+          "type": "boolean"
+        },
+        "override": {
+          "type": "boolean"
+        },
+        "deleted": {
+          "type": "boolean"
+        },
+        "defaulted": {
+          "type": "boolean"
+        },
+        "implicit": {
+          "type": "boolean"
+        },
+        "parameters": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ParameterSummary"
+          }
+        },
+        "relations": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "calls": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/RelationSummary"
+              }
+            },
+            "called_by": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/RelationSummary"
+              }
+            },
+            "derives_from": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/RelationSummary"
+              }
+            },
+            "overrides": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/RelationSummary"
+              }
+            },
+            "contains": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/RelationSummary"
+              }
+            }
+          }
+        }
+      },
+      "required": [
+        "symbol_id",
+        "entity",
+        "name"
+      ]
+    },
+    "Scope": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "file": {
+          "type": "string"
+        },
+        "inside_function": {
+          "type": "string",
+          "description": "Opaque symbol_id of containing function/method/constructor/destructor."
+        },
+        "inside_class": {
+          "type": "string",
+          "description": "Opaque symbol_id of containing class/struct."
+        },
+        "in_namespace": {
+          "type": "string",
+          "description": "Namespace name or symbol_id."
+        }
+      }
+    },
+    "RelationsFilter": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "derives_from": {
+          "type": "string",
+          "description": "Base class symbol_id or qualified name."
+        },
+        "overrides": {
+          "type": "string",
+          "description": "Base method symbol_id."
+        },
+        "calls": {
+          "type": "string",
+          "description": "Target callable symbol_id."
+        },
+        "called_by": {
+          "type": "string",
+          "description": "Caller symbol_id."
+        }
+      }
+    },
+    "Where": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "qualified_name": {
+          "type": "string"
+        },
+        "return_type": {
+          "type": "string"
+        },
+        "type": {
+          "type": "string"
+        },
+        "param_types": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "static": {
+          "type": "boolean"
+        },
+        "const": {
+          "type": "boolean"
+        },
+        "virtual": {
+          "type": "boolean"
+        },
+        "override": {
+          "type": "boolean"
+        },
+        "deleted": {
+          "type": "boolean"
+        },
+        "defaulted": {
+          "type": "boolean"
+        },
+        "implicit": {
+          "type": "boolean"
+        },
+        "access": {
+          "$ref": "#/$defs/Access"
+        },
+        "relations": {
+          "$ref": "#/$defs/RelationsFilter"
+        },
+        "any_of": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          }
+        }
+      }
+    },
+    "BaseResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "status": {
+          "$ref": "#/$defs/Status"
+        },
+        "warnings": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Warning"
+          }
+        }
+      },
+      "required": [
+        "status",
+        "warnings"
+      ]
+    },
+    "CppResolveSymbolRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "entity": {
+          "$ref": "#/$defs/Entity"
+        },
+        "qualified_name": {
+          "type": "string"
+        },
+        "file": {
+          "type": "string"
+        },
+        "param_types": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100,
+          "default": 20
+        }
+      },
+      "required": [
+        "name"
+      ]
+    },
+    "CppResolveSymbolResponse": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/BaseResponse"
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "status": {
+              "$ref": "#/$defs/Status"
+            },
+            "result_kind": {
+              "const": "resolve_symbol"
+            },
+            "ambiguous": {
+              "type": "boolean"
+            },
+            "items": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/SymbolSummary"
+              }
+            },
+            "warnings": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/Warning"
+              }
+            },
+            "page": {
+              "$ref": "#/$defs/Page"
+            }
+          },
+          "required": [
+            "status",
+            "result_kind",
+            "ambiguous",
+            "items",
+            "warnings",
+            "page"
+          ]
+        }
+      ]
+    },
+    "CppSemanticQueryRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "action": {
+          "$ref": "#/$defs/Action"
+        },
+        "entity": {
+          "$ref": "#/$defs/Entity"
+        },
+        "scope": {
+          "$ref": "#/$defs/Scope"
+        },
+        "where": {
+          "$ref": "#/$defs/Where"
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000,
+          "default": 100
+        },
+        "cursor": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "action",
+        "entity"
+      ]
+    },
+    "CppSemanticQueryResponse": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/BaseResponse"
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "status": {
+              "$ref": "#/$defs/Status"
+            },
+            "result_kind": {
+              "$ref": "#/$defs/Action"
+            },
+            "items": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/SymbolSummary"
+              }
+            },
+            "count": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "exists": {
+              "type": "boolean"
+            },
+            "warnings": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/Warning"
+              }
+            },
+            "page": {
+              "$ref": "#/$defs/Page"
+            }
+          },
+          "required": [
+            "status",
+            "result_kind",
+            "warnings"
+          ],
+          "allOf": [
+            {
+              "if": {
+                "properties": {
+                  "result_kind": {
+                    "enum": [
+                      "find",
+                      "list"
+                    ]
+                  }
+                },
+                "required": [
+                  "result_kind"
+                ]
+              },
+              "then": {
+                "required": [
+                  "items",
+                  "page"
+                ]
+              }
+            },
+            {
+              "if": {
+                "properties": {
+                  "result_kind": {
+                    "const": "count"
+                  }
+                },
+                "required": [
+                  "result_kind"
+                ]
+              },
+              "then": {
+                "required": [
+                  "count"
+                ]
+              }
+            },
+            {
+              "if": {
+                "properties": {
+                  "result_kind": {
+                    "const": "exists"
+                  }
+                },
+                "required": [
+                  "result_kind"
+                ]
+              },
+              "then": {
+                "required": [
+                  "exists"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "CppDescribeSymbolRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "symbol_id": {
+          "type": "string"
+        },
+        "include_relations": {
+          "type": "boolean",
+          "default": true
+        },
+        "relation_limit": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100,
+          "default": 20
+        }
+      },
+      "required": [
+        "symbol_id"
+      ]
+    },
+    "CppDescribeSymbolResponse": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/BaseResponse"
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "status": {
+              "$ref": "#/$defs/Status"
+            },
+            "result_kind": {
+              "const": "describe_symbol"
+            },
+            "item": {
+              "$ref": "#/$defs/SymbolSummary"
+            },
+            "warnings": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/Warning"
+              }
+            }
+          },
+          "required": [
+            "status",
+            "result_kind",
+            "item",
+            "warnings"
+          ]
+        }
+      ]
+    }
+  }
+}
