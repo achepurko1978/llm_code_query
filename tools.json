@@ -12,7 +12,7 @@
     },
     {
       "name": "cpp_semantic_query",
-      "description": "Run a normalized semantic query over C++ code entities, scopes, filters, and relations.",
+      "description": "Run a normalized semantic query over C++ code entities, scopes, filters, and relations. Use the 'fields' parameter to limit which fields are returned per item and keep responses small. For listing method names use: action=list, entity=method, scope={file:...}, fields=[\"qualified_name\",\"signature\",\"access\"].",
       "inputSchema": {
         "$ref": "cpp-mcp-v1.schema.json#/$defs/CppSemanticQueryRequest"
       },

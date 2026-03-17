@@ -621,6 +621,7 @@ def tool_cpp_semantic_query(idx: IndexData, req: dict[str, Any]) -> dict[str, An
     limit = int(req.get("limit", 100))
     limit = max(1, min(limit, 1000))
     cursor = req.get("cursor")
+    fields: list[str] | None = req.get("fields") if isinstance(req.get("fields"), list) else None
 
     if entity == "file":
         file_item = {
@@ -649,6 +650,9 @@ def tool_cpp_semantic_query(idx: IndexData, req: dict[str, Any]) -> dict[str, An
 
     if action in {"find", "list"}:
         items, page = page_slice(matches, limit, cursor)
+        if fields:
+            keep = {"symbol_id", "entity", "name"} | set(fields)
+            items = [{k: v for k, v in item.items() if k in keep} for item in items]
         return {"status": "ok", "result_kind": action, "items": items, "warnings": [], "page": page}
     if action == "count":
         return {"status": "ok", "result_kind": "count", "count": len(matches), "warnings": []}
