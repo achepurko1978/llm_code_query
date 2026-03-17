@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -12,35 +13,120 @@ from typing import Any
 SERVER_NAME = "clang-cpp-mcp"
 SERVER_VERSION = "0.1.0"
 
+# Accumulated leftover bytes from previous reads.
+_stdin_buf = bytearray()
 
-def read_mcp_message() -> dict[str, Any] | None:
-    headers: dict[str, str] = {}
+
+def _log(msg: str) -> None:
+    os.write(2, f"[clang-cpp-mcp] {msg}\n".encode("utf-8"))
+
+
+def _fill_buf(min_bytes: int = 1) -> bool:
+    """Read from stdin until _stdin_buf has at least min_bytes, or EOF."""
+    global _stdin_buf
+    while len(_stdin_buf) < min_bytes:
+        chunk = os.read(0, 65536)
+        if not chunk:
+            return False
+        _stdin_buf.extend(chunk)
+    return True
+
+
+def _consume(n: int) -> bytes:
+    global _stdin_buf
+    data = bytes(_stdin_buf[:n])
+    del _stdin_buf[:n]
+    return data
+
+
+def _peek_byte() -> int | None:
+    if not _fill_buf(1):
+        return None
+    return _stdin_buf[0]
+
+
+def _read_content_length_message() -> dict[str, Any] | None:
+    """Read a Content-Length framed JSON-RPC message."""
+    global _stdin_buf
     while True:
-        line = sys.stdin.buffer.readline()
-        if not line:
+        if not _fill_buf(1):
             return None
-        line = line.decode("utf-8", errors="replace")
-        if line in ("\r\n", "\n"):
+        idx = _stdin_buf.find(b"\r\n\r\n")
+        if idx >= 0:
             break
+        # Need more data for full header
+        old_len = len(_stdin_buf)
+        if not _fill_buf(old_len + 1):
+            return None
+
+    header_block = bytes(_stdin_buf[:idx]).decode("utf-8", errors="replace")
+    del _stdin_buf[:idx + 4]  # consume header + \r\n\r\n
+
+    content_length = 0
+    for line in header_block.split("\r\n"):
         if ":" in line:
             k, v = line.split(":", 1)
-            headers[k.strip().lower()] = v.strip()
+            if k.strip().lower() == "content-length":
+                content_length = int(v.strip())
 
-    content_length = int(headers.get("content-length", "0"))
     if content_length <= 0:
         return None
 
-    body = sys.stdin.buffer.read(content_length)
-    if not body:
+    if not _fill_buf(content_length):
         return None
+    body = _consume(content_length)
     return json.loads(body.decode("utf-8"))
+
+
+def _read_newline_json_message() -> dict[str, Any] | None:
+    """Read a newline-delimited JSON message."""
+    global _stdin_buf
+    while True:
+        idx = _stdin_buf.find(b"\n")
+        if idx >= 0:
+            line = _consume(idx + 1)
+            stripped = line.strip()
+            if stripped:
+                return json.loads(stripped.decode("utf-8"))
+            continue  # blank line, skip
+        old_len = len(_stdin_buf)
+        if not _fill_buf(old_len + 1):
+            # EOF — try to parse whatever remains
+            if _stdin_buf:
+                data = bytes(_stdin_buf)
+                _stdin_buf.clear()
+                stripped = data.strip()
+                if stripped:
+                    return json.loads(stripped.decode("utf-8"))
+            return None
+
+
+def read_mcp_message() -> dict[str, Any] | None:
+    """Auto-detect framing: Content-Length headers or newline-delimited JSON."""
+    b = _peek_byte()
+    if b is None:
+        _log("stdin EOF")
+        return None
+    if chr(b) == "{":
+        return _read_newline_json_message()
+    elif chr(b) == "C":
+        return _read_content_length_message()
+    else:
+        # Skip whitespace / blank lines
+        _consume(1)
+        return read_mcp_message()
 
 
 def write_mcp_message(payload: dict[str, Any]) -> None:
     raw = json.dumps(payload, ensure_ascii=True).encode("utf-8")
-    sys.stdout.buffer.write(f"Content-Length: {len(raw)}\r\n\r\n".encode("ascii"))
-    sys.stdout.buffer.write(raw)
-    sys.stdout.buffer.flush()
+    os.write(1, raw + b"\n")
+
+
+def _write_all(data: bytes) -> None:
+    mv = memoryview(data)
+    while mv:
+        written = os.write(1, mv)
+        mv = mv[written:]
 
 
 def make_response(msg_id: Any, result: dict[str, Any]) -> dict[str, Any]:
@@ -51,10 +137,45 @@ def make_error(msg_id: Any, code: int, message: str) -> dict[str, Any]:
     return {"jsonrpc": "2.0", "id": msg_id, "error": {"code": code, "message": message}}
 
 
+def _resolve_refs(obj: Any, defs: dict[str, Any], depth: int = 0) -> Any:
+    if depth > 20:
+        return obj
+    if isinstance(obj, dict):
+        ref = obj.get("$ref")
+        if ref and isinstance(ref, str):
+            prefix = "cpp-mcp-v1.schema.json#/$defs/"
+            if ref.startswith(prefix):
+                def_name = ref[len(prefix):]
+            elif ref.startswith("#/$defs/"):
+                def_name = ref[len("#/$defs/"):]
+            else:
+                def_name = None
+            if def_name and def_name in defs:
+                return _resolve_refs(defs[def_name], defs, depth + 1)
+        out = {}
+        for k, v in obj.items():
+            if k == "additionalProperties":
+                continue
+            out[k] = _resolve_refs(v, defs, depth + 1)
+        return out
+    if isinstance(obj, list):
+        return [_resolve_refs(v, defs, depth + 1) for v in obj]
+    return obj
+
+
 def load_tools_schema(path: Path) -> list[dict[str, Any]]:
     with path.open("r", encoding="utf-8") as f:
         data = json.load(f)
-    return list(data.get("tools", []))
+    tools = list(data.get("tools", []))
+
+    schema_path = path.parent / "cpp-mcp-v1.schema.json"
+    defs: dict[str, Any] = {}
+    if schema_path.is_file():
+        with schema_path.open("r", encoding="utf-8") as f:
+            schema = json.load(f)
+        defs = schema.get("$defs", {})
+
+    return [_resolve_refs(t, defs) for t in tools]
 
 
 def map_tool_name_to_cmd(name: str) -> str | None:
@@ -405,6 +526,7 @@ def main() -> int:
     clang_script = norm_path(args.clang_script, workspace_root)
 
     tools = load_tools_schema(tools_path)
+    _log(f"loaded {len(tools)} tools from {tools_path}")
 
     build_dir: str | None = None
     source_files: list[str] | None = None
@@ -412,10 +534,12 @@ def main() -> int:
     while True:
         req = read_mcp_message()
         if req is None:
+            _log("read_mcp_message returned None, exiting")
             return 0
 
         method = req.get("method")
         msg_id = req.get("id")
+        _log(f"received method={method} id={msg_id}")
 
         if method == "initialize":
             result = {
@@ -425,6 +549,7 @@ def main() -> int:
             }
             if msg_id is not None:
                 write_mcp_message(make_response(msg_id, result))
+                _log("sent initialize response")
             continue
 
         if method == "notifications/initialized":
