@@ -17,6 +17,7 @@ CC=clang CXX=clang++ cmake -S . -B build
 
 ```bash
 python3 clang_mcp.py doctor
-python3 clang_mcp.py --build-dir build --file sample.cpp list-functions
-python3 clang_mcp.py --build-dir build --file sample.cpp describe-function --name add
+python3 clang_mcp.py --build-dir build --file sample.cpp cpp_resolve_symbol --request-json '{"name":"add"}'
+python3 clang_mcp.py --build-dir build --file sample.cpp cpp_semantic_query --request-json '{"action":"list","entity":"function"}'
+python3 clang_mcp.py --build-dir build --file sample.cpp cpp_describe_symbol --request-json '{"symbol_id":"c:@F@add#I#I#"}'
 ```
