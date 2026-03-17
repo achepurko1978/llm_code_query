@@ -3,7 +3,11 @@ from __future__ import annotations
 
 import argparse, json, sys
 from pathlib import Path
-from clang import cindex
+
+try:
+    from clang import cindex
+except ModuleNotFoundError:
+    cindex = None
 
 
 def die(msg: str) -> None:
@@ -15,6 +19,8 @@ def norm(p: str) -> str:
 
 
 def compile_args(build_dir: str, src: str) -> list[str]:
+    if cindex is None:
+        die("missing dependency: install Python clang bindings with 'python3 -m pip install clang'")
     db = cindex.CompilationDatabase.fromDirectory(build_dir)
     cmds = db.getCompileCommands(src)
     cmd = next(iter(cmds or []), None)
@@ -43,6 +49,8 @@ def compile_args(build_dir: str, src: str) -> list[str]:
 
 
 def parse(build_dir: str, src: str):
+    if cindex is None:
+        die("missing dependency: install Python clang bindings with 'python3 -m pip install clang'")
     return cindex.Index.create().parse(src, args=compile_args(build_dir, src))
 
 
@@ -52,6 +60,8 @@ def same_file(cur, src: str) -> bool:
 
 
 def functions(tu, src: str):
+    if cindex is None:
+        die("missing dependency: install Python clang bindings with 'python3 -m pip install clang'")
     for c in tu.cursor.get_children():
         if c.kind == cindex.CursorKind.FUNCTION_DECL and c.is_definition() and same_file(c, src):
             yield c
@@ -101,17 +111,58 @@ def describe_function(build_dir: str, src: str, name: str) -> dict:
     return {"status": "ok", "result_kind": "describe_symbol", "item": out, "warnings": []}
 
 
+def doctor(build_dir: str | None, src: str | None) -> dict:
+    checks = []
+
+    if cindex is None:
+        checks.append({"name": "python_clang_module", "ok": False, "message": "missing Python clang bindings"})
+    else:
+        checks.append({"name": "python_clang_module", "ok": True, "message": "clang.cindex import succeeded"})
+        try:
+            cindex.Index.create()
+            checks.append({"name": "libclang_runtime", "ok": True, "message": "libclang runtime is usable"})
+        except Exception as e:
+            checks.append({"name": "libclang_runtime", "ok": False, "message": f"libclang unavailable: {e}"})
+
+    if build_dir:
+        p = Path(build_dir)
+        db_path = p / "compile_commands.json"
+        checks.append({"name": "build_dir_exists", "ok": p.is_dir(), "message": str(p)})
+        checks.append({"name": "compile_commands_json", "ok": db_path.is_file(), "message": str(db_path)})
+
+    if src:
+        p = Path(src)
+        checks.append({"name": "source_file_exists", "ok": p.is_file(), "message": str(p)})
+
+    ok = all(c["ok"] for c in checks)
+    warnings = [] if ok else [{"code": "CHECK_FAILED", "message": "one or more doctor checks failed"}]
+    return {"status": "ok", "result_kind": "doctor", "ok": ok, "checks": checks, "warnings": warnings}
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--build-dir", required=True)
-    ap.add_argument("--file", required=True)
+    ap.add_argument("--build-dir")
+    ap.add_argument("--file")
     sp = ap.add_subparsers(dest="cmd", required=True)
     sp.add_parser("list-functions")
+    sp.add_parser("doctor")
     p = sp.add_parser("describe-function")
     p.add_argument("--name", required=True)
+
+    if len(sys.argv) == 1:
+        ap.print_help(sys.stdout)
+        return 0
+
     a = ap.parse_args()
-    src, build = norm(a.file), norm(a.build_dir)
-    out = list_functions(build, src) if a.cmd == "list-functions" else describe_function(build, src, a.name)
+    src = norm(a.file) if a.file else None
+    build = norm(a.build_dir) if a.build_dir else None
+
+    if a.cmd == "doctor":
+        out = doctor(build, src)
+    else:
+        if not build or not src:
+            die("--build-dir and --file are required for list-functions and describe-function")
+        out = list_functions(build, src) if a.cmd == "list-functions" else describe_function(build, src, a.name)
     json.dump(out, sys.stdout, indent=2)
     sys.stdout.write("\n")
     return 0
