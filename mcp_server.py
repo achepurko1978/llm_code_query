@@ -374,6 +374,13 @@ def route_tool_call(clang_script: Path, build_dir: str, workspace_root: Path, fi
     return last_no_match
 
 
+def resolve_runtime_context(workspace_root: Path, build_dir_arg: str | None) -> tuple[str, list[str]]:
+    compile_db = find_compile_db(workspace_root, build_dir_arg)
+    build_dir = str(compile_db.parent)
+    source_files = source_files_from_compile_db(compile_db, workspace_root, compile_db.parent)
+    return build_dir, source_files
+
+
 def tool_result(payload: dict[str, Any], is_error: bool = False) -> dict[str, Any]:
     txt = json.dumps(payload, indent=2, ensure_ascii=True)
     return {
@@ -399,9 +406,8 @@ def main() -> int:
 
     tools = load_tools_schema(tools_path)
 
-    compile_db = find_compile_db(workspace_root, args.build_dir)
-    build_dir = str(compile_db.parent)
-    source_files = source_files_from_compile_db(compile_db, workspace_root, compile_db.parent)
+    build_dir: str | None = None
+    source_files: list[str] | None = None
 
     while True:
         req = read_mcp_message()
@@ -450,6 +456,18 @@ def main() -> int:
 
             if not isinstance(call_args, dict):
                 call_args = {}
+
+            if build_dir is None or source_files is None:
+                try:
+                    build_dir, source_files = resolve_runtime_context(workspace_root, args.build_dir)
+                except Exception as e:
+                    payload = {
+                        "status": "error",
+                        "warnings": [{"code": "RUNTIME_CONTEXT_ERROR", "message": str(e)}],
+                    }
+                    if msg_id is not None:
+                        write_mcp_message(make_response(msg_id, tool_result(payload, is_error=True)))
+                    continue
 
             payload = route_tool_call(clang_script, build_dir, workspace_root, source_files, cmd, call_args, args.backend_timeout)
             is_error = payload.get("status") == "error"
