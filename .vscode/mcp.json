@@ -1,0 +1,15 @@
+{
+  "servers": {
+    "clang-cpp": {
+      "type": "stdio",
+      "command": "python3",
+      "args": [
+        "${workspaceFolder}/mcp_server.py",
+        "--workspace-root",
+        "${workspaceFolder}",
+        "--backend-timeout",
+        "12"
+      ]
+    }
+  }
+}
