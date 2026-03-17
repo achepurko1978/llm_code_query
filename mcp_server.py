@@ -261,7 +261,7 @@ def find_compile_db(workspace_root: Path, build_dir: str | None) -> Path:
         raise FileNotFoundError("could not discover compile_commands.json; run CMake configure first")
 
     matches.sort(key=lambda p: (len(p.parts), str(p)))
-    return matches[0]
+    return matches[0].resolve()
 
 
 def source_files_from_compile_db(compile_db: Path, workspace_root: Path, build_dir: Path) -> list[str]:

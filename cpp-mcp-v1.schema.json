@@ -494,6 +494,28 @@
         },
         "cursor": {
           "type": "string"
+        },
+        "fields": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "name",
+              "qualified_name",
+              "signature",
+              "return_type",
+              "parameters",
+              "access",
+              "static",
+              "const",
+              "virtual",
+              "override",
+              "deleted",
+              "defaulted",
+              "location"
+            ]
+          },
+          "description": "Optional subset of fields to include per result item. symbol_id, entity, and name are always present. Omitting this returns all fields. For listing method names use: [\"qualified_name\", \"signature\", \"access\"]."
         }
       },
       "required": [
