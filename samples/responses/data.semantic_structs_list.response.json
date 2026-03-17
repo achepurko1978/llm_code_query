@@ -1,0 +1,26 @@
+{
+  "status": "ok",
+  "result_kind": "list",
+  "items": [
+    {
+      "symbol_id": "c:@N@data@S@Point",
+      "entity": "struct",
+      "name": "Point",
+      "qualified_name": "data::Point",
+      "type": "data::Point",
+      "deleted": false,
+      "defaulted": false,
+      "location": {
+        "file": "/workspace/samples/cpp/data.cpp",
+        "line": 3,
+        "column": 8
+      }
+    }
+  ],
+  "warnings": [],
+  "page": {
+    "next_cursor": null,
+    "truncated": false,
+    "total_matches": 1
+  }
+}

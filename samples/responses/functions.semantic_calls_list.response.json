@@ -1,0 +1,40 @@
+{
+  "status": "ok",
+  "result_kind": "list",
+  "items": [
+    {
+      "symbol_id": "loc:/workspace/samples/cpp/functions.cpp:16:12",
+      "entity": "call",
+      "name": "square",
+      "qualified_name": "fun::square",
+      "type": "int",
+      "deleted": false,
+      "defaulted": false,
+      "location": {
+        "file": "/workspace/samples/cpp/functions.cpp",
+        "line": 16,
+        "column": 12
+      }
+    },
+    {
+      "symbol_id": "loc:/workspace/samples/cpp/functions.cpp:16:19",
+      "entity": "call",
+      "name": "add",
+      "qualified_name": "fun::add",
+      "type": "int",
+      "deleted": false,
+      "defaulted": false,
+      "location": {
+        "file": "/workspace/samples/cpp/functions.cpp",
+        "line": 16,
+        "column": 19
+      }
+    }
+  ],
+  "warnings": [],
+  "page": {
+    "next_cursor": null,
+    "truncated": false,
+    "total_matches": 2
+  }
+}
