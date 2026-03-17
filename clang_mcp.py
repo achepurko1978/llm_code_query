@@ -87,7 +87,9 @@ def sig(c) -> str:
         if p.spelling:
             s += f" {p.spelling}"
         ps.append(s)
-    return f"{t(c.result_type)} {c.spelling}({', '.join(ps)})"
+    base = f"{t(c.result_type)} {c.spelling}({', '.join(ps)})"
+    is_const = hasattr(c, "is_const_method") and c.is_const_method()
+    return f"{base} const" if is_const else base
 
 
 def qualified_name(c) -> str:
