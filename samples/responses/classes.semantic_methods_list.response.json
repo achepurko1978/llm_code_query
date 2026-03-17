@@ -1,0 +1,114 @@
+{
+  "status": "ok",
+  "result_kind": "list",
+  "items": [
+    {
+      "symbol_id": "c:@N@model@S@BaseCounter@F@bump#I#",
+      "entity": "method",
+      "name": "bump",
+      "qualified_name": "model::BaseCounter::bump",
+      "signature": "int bump(int value)",
+      "return_type": "int",
+      "parameters": [
+        {
+          "entity": "parameter",
+          "name": "value",
+          "type": "int",
+          "position": 0,
+          "symbol_id": "c:classes.cpp@68@N@model@S@BaseCounter@F@bump#I#@value",
+          "location": {
+            "file": "/workspace/samples/cpp/classes.cpp",
+            "line": 5,
+            "column": 26
+          }
+        }
+      ],
+      "static": false,
+      "const": false,
+      "virtual": true,
+      "override": false,
+      "access": "public",
+      "deleted": false,
+      "defaulted": false,
+      "location": {
+        "file": "/workspace/samples/cpp/classes.cpp",
+        "line": 5,
+        "column": 17
+      }
+    },
+    {
+      "symbol_id": "c:@N@model@S@FancyCounter@F@bump#I#",
+      "entity": "method",
+      "name": "bump",
+      "qualified_name": "model::FancyCounter::bump",
+      "signature": "int bump(int value)",
+      "return_type": "int",
+      "parameters": [
+        {
+          "entity": "parameter",
+          "name": "value",
+          "type": "int",
+          "position": 0,
+          "symbol_id": "c:classes.cpp@180@N@model@S@FancyCounter@F@bump#I#@value",
+          "location": {
+            "file": "/workspace/samples/cpp/classes.cpp",
+            "line": 12,
+            "column": 18
+          }
+        }
+      ],
+      "static": false,
+      "const": false,
+      "virtual": true,
+      "override": false,
+      "access": "public",
+      "deleted": false,
+      "defaulted": false,
+      "location": {
+        "file": "/workspace/samples/cpp/classes.cpp",
+        "line": 12,
+        "column": 9
+      }
+    },
+    {
+      "symbol_id": "c:@N@model@S@FancyCounter@F@twice#I#",
+      "entity": "method",
+      "name": "twice",
+      "qualified_name": "model::FancyCounter::twice",
+      "signature": "int twice(int value)",
+      "return_type": "int",
+      "parameters": [
+        {
+          "entity": "parameter",
+          "name": "value",
+          "type": "int",
+          "position": 0,
+          "symbol_id": "c:classes.cpp@268@N@model@S@FancyCounter@F@twice#I#@value",
+          "location": {
+            "file": "/workspace/samples/cpp/classes.cpp",
+            "line": 16,
+            "column": 19
+          }
+        }
+      ],
+      "static": false,
+      "const": false,
+      "virtual": false,
+      "override": false,
+      "access": "public",
+      "deleted": false,
+      "defaulted": false,
+      "location": {
+        "file": "/workspace/samples/cpp/classes.cpp",
+        "line": 16,
+        "column": 9
+      }
+    }
+  ],
+  "warnings": [],
+  "page": {
+    "next_cursor": null,
+    "truncated": false,
+    "total_matches": 3
+  }
+}

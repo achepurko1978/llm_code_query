@@ -215,7 +215,10 @@ def symbol_summary(c) -> dict[str, Any]:
         if b is not None:
             out["virtual"] = b
         if e == "method":
-            out["override"] = False
+            try:
+                out["override"] = len(list(c.get_overridden_cursors() or [])) > 0
+            except Exception:
+                out["override"] = False
         b = bool_attr(c, "is_pure_virtual_method")
         if b is not None and b:
             out["virtual"] = True
