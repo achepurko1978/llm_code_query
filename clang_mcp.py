@@ -651,7 +651,7 @@ def tool_cpp_semantic_query(idx: IndexData, req: dict[str, Any]) -> dict[str, An
     if action in {"find", "list"}:
         items, page = page_slice(matches, limit, cursor)
         if fields:
-            keep = {"symbol_id", "entity", "name"} | set(fields)
+            keep = set(fields)
             items = [{k: v for k, v in item.items() if k in keep} for item in items]
         return {"status": "ok", "result_kind": action, "items": items, "warnings": [], "page": page}
     if action == "count":
