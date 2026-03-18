@@ -292,6 +292,15 @@ impl CompilationDatabase {
         }
         Ok(CompileCommands { raw })
     }
+
+    /// Return all compile commands in the database.
+    pub fn all_compile_commands(&self) -> anyhow::Result<CompileCommands> {
+        let raw = unsafe { clang_CompilationDatabase_getAllCompileCommands(self.raw) };
+        if raw.is_null() {
+            anyhow::bail!("no compile commands in database");
+        }
+        Ok(CompileCommands { raw })
+    }
 }
 
 impl Drop for CompilationDatabase {

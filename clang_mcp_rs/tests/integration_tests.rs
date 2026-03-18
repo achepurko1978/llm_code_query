@@ -447,3 +447,130 @@ fn test_resolve_with_entity_filter() {
         assert_eq!(item["name"], "add");
     }
 }
+
+// ---------------------------------------------------------------------------
+// Header file (.h) integration tests
+// ---------------------------------------------------------------------------
+
+fn run_header_query(header: &str, request_json: &str) -> Value {
+    let ws = workspace_root();
+    let output = Command::cargo_bin("clang_mcp")
+        .unwrap()
+        .env("LIBCLANG_PATH", "/usr/lib/x86_64-linux-gnu")
+        .args(&[
+            "--build-dir",
+            &format!("{ws}/build"),
+            "--file",
+            &format!("{ws}/samples/cpp/{header}"),
+            "cpp_semantic_query",
+            "--request-json",
+            request_json,
+        ])
+        .output()
+        .expect("failed to execute binary");
+    assert!(
+        output.status.success(),
+        "binary exited with error for {header}: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    serde_json::from_slice(&output.stdout).expect("invalid JSON output")
+}
+
+#[test]
+fn test_header_list_classes() {
+    let v = run_header_query("shapes.h", r#"{"entity":"class","action":"list"}"#);
+    assert_eq!(v["status"], "ok");
+    let items = v["items"].as_array().unwrap();
+    assert_eq!(items.len(), 3);
+    let names: Vec<&str> = items.iter().map(|i| i["name"].as_str().unwrap()).collect();
+    assert!(names.contains(&"Shape"));
+    assert!(names.contains(&"Circle"));
+    assert!(names.contains(&"Rectangle"));
+}
+
+#[test]
+fn test_header_list_methods() {
+    let v = run_header_query("shapes.h", r#"{"entity":"method","action":"list"}"#);
+    assert_eq!(v["status"], "ok");
+    let items = v["items"].as_array().unwrap();
+    assert!(items.len() >= 9, "expected >= 9 methods, got {}", items.len());
+}
+
+#[test]
+fn test_header_exists_virtual() {
+    let v = run_header_query(
+        "shapes.h",
+        r#"{"entity":"method","action":"exists","where":{"virtual":true}}"#,
+    );
+    assert_eq!(v["status"], "ok");
+    assert_eq!(v["exists"], true);
+}
+
+#[test]
+fn test_header_exists_override() {
+    let v = run_header_query(
+        "shapes.h",
+        r#"{"entity":"method","action":"exists","where":{"override":true}}"#,
+    );
+    assert_eq!(v["status"], "ok");
+    assert_eq!(v["exists"], true);
+}
+
+#[test]
+fn test_header_list_functions_utils() {
+    let v = run_header_query("utils.h", r#"{"entity":"function","action":"list"}"#);
+    assert_eq!(v["status"], "ok");
+    let items = v["items"].as_array().unwrap();
+    let names: Vec<&str> = items.iter().map(|i| i["name"].as_str().unwrap()).collect();
+    assert!(names.contains(&"split"));
+    assert!(names.contains(&"join"));
+    assert!(names.contains(&"count_char"));
+}
+
+#[test]
+fn test_header_list_structs_utils() {
+    let v = run_header_query("utils.h", r#"{"entity":"struct","action":"list"}"#);
+    assert_eq!(v["status"], "ok");
+    let items = v["items"].as_array().unwrap();
+    let names: Vec<&str> = items.iter().map(|i| i["name"].as_str().unwrap()).collect();
+    assert!(names.contains(&"KeyValue"));
+}
+
+#[test]
+fn test_header_count_classes() {
+    let v = run_header_query("shapes.h", r#"{"entity":"class","action":"count"}"#);
+    assert_eq!(v["status"], "ok");
+    assert_eq!(v["count"], 3);
+}
+
+#[test]
+fn test_header_describe_symbol() {
+    let ws = workspace_root();
+    // First list to get symbol_id for Circle
+    let list = run_header_query("shapes.h", r#"{"entity":"class","action":"list"}"#);
+    let circle = list["items"].as_array().unwrap()
+        .iter()
+        .find(|i| i["name"] == "Circle")
+        .expect("Circle not found");
+    let sid = circle["symbol_id"].as_str().unwrap();
+
+    let output = Command::cargo_bin("clang_mcp")
+        .unwrap()
+        .env("LIBCLANG_PATH", "/usr/lib/x86_64-linux-gnu")
+        .args(&[
+            "--build-dir",
+            &format!("{ws}/build"),
+            "--file",
+            &format!("{ws}/samples/cpp/shapes.h"),
+            "cpp_describe_symbol",
+            "--request-json",
+            &format!(r#"{{"symbol_id":"{sid}"}}"#),
+        ])
+        .output()
+        .expect("failed to execute binary");
+    assert!(output.status.success());
+    let v: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(v["status"], "ok");
+    assert_eq!(v["item"]["name"], "Circle");
+    assert_eq!(v["item"]["entity"], "class");
+}
