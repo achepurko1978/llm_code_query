@@ -8,12 +8,17 @@ binary.
 
 ## Python Back-End
 
-### Install dependency
+### Install dependencies
 
 ```bash
 sudo apt-get update
 sudo apt-get install -y python3-clang
+pip install mcp
 ```
+
+The MCP server (`mcp_server.py`) requires the [MCP Python SDK](https://pypi.org/project/mcp/)
+(`mcp` package, which includes `anyio`). The clang back-end (`clang_mcp.py`)
+requires `python3-clang`.
 
 ### Prepare compile database
 
@@ -173,6 +178,10 @@ Everything else (tool names, request/response format) is identical.
 - `tools.json`
 
 ### Common requirements
+
+Required Python package (for `mcp_server.py`):
+
+- `mcp` (`pip install mcp`)
 
 Required generated file (from your CMake configure step):
 
