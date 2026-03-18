@@ -46,6 +46,8 @@ pub struct SymbolEntry {
     pub is_definition: bool,
     pub file_norm: Option<String>,
     pub param_types: Vec<String>,
+    /// Source extent: (start_line, end_line).
+    pub extent: (u32, u32),
 }
 
 /// All indexed data for a single translation unit.
@@ -115,6 +117,8 @@ fn build_index(tu: &TranslationUnit, src: &str, workspace_root: Option<&str>) ->
         let summary = symbol_summary(&c);
         let file_norm = c.location().file.as_ref().map(|f| norm(f));
 
+        let (ext_start, ext_end, _, _) = c.extent();
+
         let entry = SymbolEntry {
             summary,
             symbol_id: sid.clone(),
@@ -124,6 +128,7 @@ fn build_index(tu: &TranslationUnit, src: &str, workspace_root: Option<&str>) ->
             is_definition: c.is_definition(),
             file_norm,
             param_types: callable_param_types(&c),
+            extent: (ext_start, ext_end),
         };
         let idx = entries.len();
         entries.push(entry);

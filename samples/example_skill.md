@@ -68,6 +68,7 @@ Use when the user wants:
 - items inside a function or class
 - queries filtered by type, return type, access, const/static/virtual/override
 - scoped structural searches
+- retrieving full source bodies in bulk (set `"include_source": true`)
 
 This is the primary workhorse tool.
 
@@ -79,6 +80,7 @@ Use when the user wants:
 - a normalized summary before editing
 - one bounded semantic summary of a class, function, or method
 - a concise explanation of signature, location, and key relations
+- the full source body of a function, method, or class (set `"include_source": true`)
 
 # Query strategy
 
@@ -203,6 +205,19 @@ Typical field sets:
 ["symbol_id", "entity", "qualified_name", "location", "source_excerpt"]
 ```
 
+## For source body retrieval
+
+Pass `"include_source": true` in the request (works with both `cpp_semantic_query` and `cpp_describe_symbol`). The response will include:
+
+- `"source"` — full source text (declaration + body)
+- `"extent"` — `{"start_line": N, "end_line": M}`
+
+Example field set when you need source:
+
+```json
+["symbol_id", "qualified_name", "signature", "source", "extent"]
+```
+
 ## For class members
 
 ```json
@@ -283,17 +298,32 @@ Do not fetch full item lists if the user only wants:
 
 ```json
 {
-  "symbol": "main"
-}
-```
-
-Or, if already resolved:
-
-```json
-{
   "symbol_id": "opaque-symbol-id"
 }
 ```
+
+## B2. Describe one symbol with its full source body
+
+```json
+{
+  "symbol_id": "opaque-symbol-id",
+  "include_source": true
+}
+```
+
+Response will contain `source` and `extent` fields on the item.
+
+## B3. List all functions with their source bodies
+
+```json
+{
+  "action": "list",
+  "entity": "function",
+  "include_source": true
+}
+```
+
+Each item in the response will contain `source` and `extent` fields.
 
 ## C. List methods of a class
 
@@ -971,9 +1001,22 @@ When reporting results:
 ## Recipe: understand a function body semantically
 
 1. resolve the function
-2. find calls inside it
-3. find variables inside it if needed
-4. describe important callee symbols
+2. describe with `"include_source": true` to get the full body
+3. find calls inside it
+4. find variables inside it if needed
+5. describe important callee symbols
+
+## Recipe: retrieve source of all functions in a file
+
+1. `cpp_semantic_query` with `{"entity": "function", "action": "list", "include_source": true}`
+2. each item contains the full source body and line extent
+3. use `scope.file` to target a specific file if needed
+
+## Recipe: get a class definition with full source
+
+1. `cpp_resolve_symbol` for the class name
+2. `cpp_describe_symbol` with `{"symbol_id": "...", "include_source": true}`
+3. the response contains the class source, members, and relations
 
 # Final preference order
 

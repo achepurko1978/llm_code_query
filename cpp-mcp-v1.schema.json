@@ -231,6 +231,26 @@
             "$ref": "#/$defs/ParameterSummary"
           }
         },
+        "source": {
+          "type": "string",
+          "description": "Full source text of the symbol (declaration + body). Only present when include_source=true in the request."
+        },
+        "extent": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "start_line": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "end_line": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          "required": ["start_line", "end_line"],
+          "description": "Line range of the symbol in the source file. Only present when include_source=true."
+        },
         "relations": {
           "type": "object",
           "additionalProperties": false,
@@ -513,10 +533,17 @@
               "override",
               "deleted",
               "defaulted",
-              "location"
+              "location",
+              "source",
+              "extent"
             ]
           },
           "description": "Optional subset of fields to include per result item. Only the requested fields are returned. Include \"symbol_id\" if you need to pass results to cpp_describe_symbol. Omitting this returns all fields. For listing method names use: [\"qualified_name\", \"signature\", \"access\"]. Important: this method listing excludes constructors/destructors; query entity=constructor and entity=destructor separately and merge if you want all member functions. For follow-up describe calls use: [\"symbol_id\", \"qualified_name\", \"signature\", \"access\"]."
+        },
+        "include_source": {
+          "type": "boolean",
+          "default": false,
+          "description": "When true, each result item includes a 'source' field with the full source text and an 'extent' field with start_line/end_line. Opt-in to avoid large responses."
         }
       },
       "required": [
@@ -643,6 +670,11 @@
           "minimum": 0,
           "maximum": 100,
           "default": 20
+        },
+        "include_source": {
+          "type": "boolean",
+          "default": false,
+          "description": "When true, the response item includes a 'source' field with the full source text and an 'extent' field with start_line/end_line."
         }
       },
       "required": [
