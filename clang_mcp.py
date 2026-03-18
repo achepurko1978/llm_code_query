@@ -37,7 +37,7 @@ def compile_args(build_dir: str, src: str) -> list[str]:
         die(f"no compile command for {src}")
     args = list(cmd.arguments)[1:]
     out, skip = [], False
-    paired = {"-o", "-MF", "-MT", "-MQ", "-MJ", "-Xclang", "-include", "-imacros", "-isysroot", "-target", "--target", "-ivfsoverlay"}
+    paired = {"-o", "-MF", "-MT", "-MQ", "-MJ", "-Xclang", "-imacros", "-isysroot", "-target", "--target", "-ivfsoverlay"}
     single = {"-c", "-M", "-MM", "-MD", "-MMD", "-MP", "-Winvalid-pch"}
     srcs = {norm(src), norm(str(Path(cmd.directory) / cmd.filename))}
     for a in args:
@@ -267,9 +267,30 @@ def walk(c):
         yield from walk(ch)
 
 
+# Paths containing these segments are considered external (system/vendor/generated).
+_EXTERNAL_SEGMENTS: tuple[str, ...] = (
+    "/.conan2/",
+    "/_deps/",
+    "/usr/include",
+    "/usr/lib",
+    "/usr/local/include",
+)
+
+
 def is_in_file(c, src: str) -> bool:
     loc = c.location
     return bool(loc and loc.file and norm(loc.file.name) == norm(src))
+
+
+def is_workspace_file(file_path: str, workspace_root: str) -> bool:
+    """True if file_path is under workspace_root and not in an external subtree."""
+    n = norm(file_path)
+    if not n.startswith(workspace_root):
+        return False
+    for seg in _EXTERNAL_SEGMENTS:
+        if seg in n:
+            return False
+    return True
 
 
 class IndexData:
@@ -285,8 +306,16 @@ class IndexData:
         self.contains_by_parent: dict[str, list[str]] = {}
 
 
-def build_index(tu, src: str) -> IndexData:
+def build_index(tu, src: str, workspace_root: str | None = None) -> IndexData:
     idx = IndexData(tu, src)
+
+    def in_scope(c) -> bool:
+        loc = c.location
+        if not (loc and loc.file):
+            return False
+        if workspace_root:
+            return is_workspace_file(loc.file.name, workspace_root)
+        return norm(loc.file.name) == norm(src)
 
     for c in walk(tu.cursor):
         if c.kind == cindex.CursorKind.TRANSLATION_UNIT:
@@ -294,7 +323,7 @@ def build_index(tu, src: str) -> IndexData:
         e = entity_of(c)
         if not e:
             continue
-        if not is_in_file(c, src):
+        if not in_scope(c):
             continue
         sid = symbol_id(c)
         idx.symbols.append(c)
@@ -303,7 +332,7 @@ def build_index(tu, src: str) -> IndexData:
     for c in idx.symbols:
         sid = symbol_id(c)
         parent = c.semantic_parent
-        if parent and entity_of(parent) in {"class", "struct", "namespace"} and is_in_file(parent, src):
+        if parent and entity_of(parent) in {"class", "struct", "namespace"} and in_scope(parent):
             idx.contains_by_parent.setdefault(symbol_id(parent), []).append(sid)
 
         if entity_of(c) in {"class", "struct"}:
@@ -686,9 +715,9 @@ def tool_cpp_describe_symbol(idx: IndexData, req: dict[str, Any]) -> dict[str, A
     return {"status": "ok", "result_kind": "describe_symbol", "item": s, "warnings": []}
 
 
-def load_index(build_dir: str, src: str) -> IndexData:
+def load_index(build_dir: str, src: str, workspace_root: str | None = None) -> IndexData:
     tu = parse(build_dir, src)
-    return build_index(tu, src)
+    return build_index(tu, src, workspace_root)
 
 
 def doctor(build_dir: str | None, src: str | None) -> dict:
@@ -723,6 +752,7 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--build-dir")
     ap.add_argument("--file")
+    ap.add_argument("--workspace-root")
     sp = ap.add_subparsers(dest="cmd", required=True)
     sp.add_parser("list-functions")
     sp.add_parser("doctor")
@@ -749,6 +779,7 @@ def main() -> int:
     a = ap.parse_args()
     src = norm(a.file) if a.file else None
     build = norm(a.build_dir) if a.build_dir else None
+    ws_root = norm(a.workspace_root) if getattr(a, "workspace_root", None) else None
 
     if a.cmd == "doctor":
         out = doctor(build, src)
@@ -757,7 +788,7 @@ def main() -> int:
             die("--build-dir and --file are required for cpp_* tool commands")
         try:
             req = parse_request(getattr(a, "request_json", None), getattr(a, "request_file", None))
-            idx = load_index(build, src)
+            idx = load_index(build, src, ws_root)
             if a.cmd == "cpp_resolve_symbol":
                 out = tool_cpp_resolve_symbol(idx, req)
             elif a.cmd == "cpp_semantic_query":
