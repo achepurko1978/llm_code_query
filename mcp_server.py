@@ -207,7 +207,8 @@ def is_no_match_describe(payload: dict[str, Any]) -> bool:
 # ---------------------------------------------------------------------------
 
 def target_files_for_tool(cmd: str, call_args: dict[str, Any], all_files: list[str],
-                          workspace_root: Path) -> list[str]:
+                          workspace_root: Path) -> tuple[list[str], bool]:
+    """Return (target_files, scope_was_directory)."""
     file_str: str | None = None
     if cmd == "cpp_resolve_symbol":
         file_str = call_args.get("file")
@@ -217,8 +218,29 @@ def target_files_for_tool(cmd: str, call_args: dict[str, Any], all_files: list[s
             file_str = scope.get("file")
     if isinstance(file_str, str) and file_str:
         p = norm_path(file_str, workspace_root)
-        return [str(p)] if p.is_file() else []
-    return all_files
+        if p.is_file():
+            return [str(p)], False
+        if p.is_dir():
+            prefix = str(p) + "/"
+            return [f for f in all_files if f.startswith(prefix) or f == str(p)], True
+        return [], False
+    return all_files, False
+
+
+def _strip_dir_scope(call_args: dict[str, Any], cmd: str) -> dict[str, Any]:
+    """Remove scope.file from args when targeting was already resolved to a directory."""
+    args = {**call_args}
+    if cmd == "cpp_semantic_query":
+        scope = args.get("scope")
+        if isinstance(scope, dict) and "file" in scope:
+            new_scope = {k: v for k, v in scope.items() if k != "file"}
+            if new_scope:
+                args["scope"] = new_scope
+            else:
+                del args["scope"]
+    elif cmd == "cpp_resolve_symbol" and "file" in args:
+        del args["file"]
+    return args
 
 
 def _aggregate_backends(clang_script: Path, build_dir: str, workspace_root: Path,
@@ -243,9 +265,13 @@ def route_tool_call(clang_script: Path, build_dir: str, workspace_root: Path,
                     timeout_sec: int) -> dict[str, Any]:
     if not files:
         return _backend_error("NO_SOURCE_FILES", "no source files found in compile_commands.json")
-    targets = target_files_for_tool(cmd, call_args, files, workspace_root)
+    targets, dir_scope = target_files_for_tool(cmd, call_args, files, workspace_root)
     if not targets:
         return _backend_error("NO_TARGET_FILES", "no matching target files for request")
+    # When scope resolved to a directory, strip it from backend args since
+    # each backend invocation already receives a specific --file.
+    if dir_scope:
+        call_args = _strip_dir_scope(call_args, cmd)
 
     if cmd == "cpp_resolve_symbol":
         requested_limit = parse_int(call_args.get("limit", 20), 20, 1, 100)
