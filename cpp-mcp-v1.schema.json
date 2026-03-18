@@ -147,7 +147,8 @@
           "type": "string"
         },
         "entity": {
-          "$ref": "#/$defs/Entity"
+          "$ref": "#/$defs/Entity",
+          "description": "Target entity kind. Important: entity=method returns regular methods only and excludes constructors/destructors. To list all member functions, run separate queries for entity=method, entity=constructor, and entity=destructor, then merge results."
         },
         "name": {
           "type": "string"
@@ -515,7 +516,7 @@
               "location"
             ]
           },
-          "description": "Optional subset of fields to include per result item. Only the requested fields are returned. Include \"symbol_id\" if you need to pass results to cpp_describe_symbol. Omitting this returns all fields. For listing method names use: [\"qualified_name\", \"signature\", \"access\"]. For follow-up describe calls use: [\"symbol_id\", \"qualified_name\", \"signature\", \"access\"]."
+          "description": "Optional subset of fields to include per result item. Only the requested fields are returned. Include \"symbol_id\" if you need to pass results to cpp_describe_symbol. Omitting this returns all fields. For listing method names use: [\"qualified_name\", \"signature\", \"access\"]. Important: this method listing excludes constructors/destructors; query entity=constructor and entity=destructor separately and merge if you want all member functions. For follow-up describe calls use: [\"symbol_id\", \"qualified_name\", \"signature\", \"access\"]."
         }
       },
       "required": [
