@@ -63,7 +63,22 @@ pub struct IndexData {
 
 /// Build a semantic index from scratch: parse the file and extract everything.
 pub fn load_index(build_dir: &str, src: &str, workspace_root: Option<&str>) -> anyhow::Result<IndexData> {
-    let args = compile_db::compile_args(build_dir, src)?;
+    let is_header = compile_db::is_header_file(src);
+    let mut args = if is_header {
+        // Header files are not direct compilation units; borrow flags from
+        // a related source file, falling back to the first DB entry.
+        match compile_db::compile_args(build_dir, src) {
+            Ok(a) => a,
+            Err(_) => compile_db::header_compile_args(build_dir, src)?,
+        }
+    } else {
+        compile_db::compile_args(build_dir, src)?
+    };
+    if is_header {
+        // Tell clang the file is C++ even though it has a .h extension.
+        args.insert(0, "c++-header".to_string());
+        args.insert(0, "-x".to_string());
+    }
     let clang_idx = Index::new();
     let tu = clang_idx.parse(src, &args)?;
     Ok(build_index(&tu, src, workspace_root))
@@ -486,5 +501,61 @@ mod tests {
         let idx = build_functions_index();
         // At least some relation summaries should exist for call targets
         assert!(!idx.relation_summaries.is_empty());
+    }
+
+    #[test]
+    fn test_load_index_header_file() {
+        let idx = load_index("/workspace/build", "/workspace/samples/cpp/shapes.h", None)
+            .expect("load_index failed for header");
+        let classes: Vec<_> = idx.symbols.iter().filter(|e| e.entity == "class").collect();
+        assert_eq!(classes.len(), 3);
+        let names: Vec<&str> = classes.iter().map(|e| e.name.as_str()).collect();
+        assert!(names.contains(&"Shape"));
+        assert!(names.contains(&"Circle"));
+        assert!(names.contains(&"Rectangle"));
+    }
+
+    #[test]
+    fn test_load_index_header_methods() {
+        let idx = load_index("/workspace/build", "/workspace/samples/cpp/shapes.h", None)
+            .expect("load_index failed for header");
+        let methods: Vec<_> = idx.symbols.iter().filter(|e| e.entity == "method").collect();
+        // Shape has 2 pure virtual methods, Circle has 3 (area, perimeter, radius),
+        // Rectangle has 4 (area, perimeter, width, height)
+        assert!(methods.len() >= 9, "expected >= 9 methods, got {}", methods.len());
+    }
+
+    #[test]
+    fn test_load_index_header_with_templates() {
+        let idx = load_index("/workspace/build", "/workspace/samples/cpp/utils.h", None)
+            .expect("load_index failed for utils.h");
+        let funcs: Vec<_> = idx.symbols.iter().filter(|e| e.entity == "function").collect();
+        let names: Vec<&str> = funcs.iter().map(|e| e.name.as_str()).collect();
+        assert!(names.contains(&"split"));
+        assert!(names.contains(&"join"));
+        assert!(names.contains(&"count_char"));
+    }
+
+    #[test]
+    fn test_load_index_header_structs() {
+        let idx = load_index("/workspace/build", "/workspace/samples/cpp/utils.h", None)
+            .expect("load_index failed for utils.h");
+        let structs: Vec<_> = idx.symbols.iter().filter(|e| e.entity == "struct").collect();
+        let names: Vec<&str> = structs.iter().map(|e| e.name.as_str()).collect();
+        assert!(names.contains(&"KeyValue"), "missing KeyValue struct, got: {names:?}");
+    }
+
+    #[test]
+    fn test_load_index_header_inheritance() {
+        let idx = load_index("/workspace/build", "/workspace/samples/cpp/shapes.h", None)
+            .expect("load_index failed for shapes.h");
+        // Circle derives from Shape
+        let circle_id = idx.symbols.iter()
+            .find(|e| e.name == "Circle" && e.entity == "class")
+            .map(|e| e.symbol_id.clone())
+            .expect("Circle not found");
+        let bases = idx.bases_by_derived.get(&circle_id);
+        assert!(bases.is_some(), "Circle should have base classes");
+        assert!(!bases.unwrap().is_empty());
     }
 }
