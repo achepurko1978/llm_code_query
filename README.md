@@ -1,19 +1,27 @@
-# clang_mcp.py Quickstart
+# clang_mcp Quickstart
 
-## Install dependency
+Two back-end implementations are available — the original Python script and a
+Rust rewrite that produces identical output but compiles to a single native
+binary.
+
+---
+
+## Python Back-End
+
+### Install dependency
 
 ```bash
 sudo apt-get update
 sudo apt-get install -y python3-clang
 ```
 
-## Prepare compile database
+### Prepare compile database
 
 ```bash
 CC=clang CXX=clang++ cmake -S . -B build
 ```
 
-## Run
+### Run
 
 ```bash
 python3 clang_mcp.py doctor
@@ -21,6 +29,61 @@ python3 clang_mcp.py --build-dir build --file sample.cpp cpp_resolve_symbol --re
 python3 clang_mcp.py --build-dir build --file sample.cpp cpp_semantic_query --request-json '{"action":"list","entity":"function"}'
 python3 clang_mcp.py --build-dir build --file sample.cpp cpp_describe_symbol --request-json '{"symbol_id":"c:@F@add#I#I#"}'
 ```
+
+---
+
+## Rust Back-End
+
+### Prerequisites
+
+| Dependency | Install |
+|---|---|
+| Rust toolchain (≥ 1.75) | `sudo apt-get install -y rustc cargo` (or [rustup](https://rustup.rs)) |
+| libclang dev headers | already provided by `libclang-*-dev` in the Docker image |
+
+### Build
+
+```bash
+cd clang_mcp_rs
+cargo build --release
+```
+
+The binary is produced at `clang_mcp_rs/target/release/clang_mcp`.
+
+> **Tip — corporate proxy:** If `cargo` fails with TLS/certificate errors behind
+> a corporate proxy (e.g. Zscaler), set `CARGO_HTTP_CHECK_REVOKE=false`.
+
+### Run
+
+The CLI is a drop-in replacement for the Python script:
+
+```bash
+# Health check
+./clang_mcp_rs/target/release/clang_mcp --build-dir build --file sample.cpp doctor
+
+# Resolve a symbol
+./clang_mcp_rs/target/release/clang_mcp --build-dir build --file sample.cpp \
+    cpp_resolve_symbol --request-json '{"name":"add"}'
+
+# Semantic query
+./clang_mcp_rs/target/release/clang_mcp --build-dir build --file sample.cpp \
+    cpp_semantic_query --request-json '{"action":"list","entity":"function"}'
+
+# Describe a symbol
+./clang_mcp_rs/target/release/clang_mcp --build-dir build --file sample.cpp \
+    cpp_describe_symbol --request-json '{"symbol_id":"c:@F@add#I#I#"}'
+```
+
+Requests can also be passed via `--request-file path/to/request.json`.
+
+### Run tests
+
+```bash
+cd clang_mcp_rs
+cargo test
+```
+
+---
 
 ## Use With Copilot (Any C++ Workspace)
 
@@ -69,13 +132,47 @@ Tips for best automatic tool selection:
 - Mention intent and scope (workspace/file/symbol), not tool names.
 - Keep `clang-cpp` tools enabled in Configure Tools.
 
+### Using the Rust back-end with the MCP server
+
+The MCP server shells out to a back-end script for each tool call.
+Pass `--clang-script` to point it at the Rust binary instead of the Python
+script:
+
+```jsonc
+// .vscode/mcp.json — Rust back-end variant
+{
+	"servers": {
+		"clang-cpp": {
+			"type": "stdio",
+			"command": "python3",
+			"args": [
+				"${workspaceFolder}/mcp_server.py",
+				"--workspace-root", "${workspaceFolder}",
+				"--backend-timeout", "12",
+				"--clang-script", "${workspaceFolder}/clang_mcp_rs/target/release/clang_mcp"
+			]
+		}
+	}
+}
+```
+
+Everything else (tool names, request/response format) is identical.
+
 ## Minimum Files To Deploy
 
-Required files in your workspace:
+### Python back-end
 
 - `mcp_server.py`
 - `clang_mcp.py`
 - `tools.json`
+
+### Rust back-end
+
+- `mcp_server.py`
+- `clang_mcp_rs/target/release/clang_mcp` (pre-built binary)
+- `tools.json`
+
+### Common requirements
 
 Required generated file (from your CMake configure step):
 
