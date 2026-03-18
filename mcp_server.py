@@ -289,7 +289,7 @@ def route_tool_call(clang_script: Path, build_dir: str, workspace_root: Path,
     if cmd == "cpp_resolve_symbol":
         requested_limit = parse_int(call_args.get("limit", 20), 20, 1, 100)
         all_items, all_warnings, had_error = _aggregate_backends(
-            clang_script, build_dir, workspace_root, targets, cmd, {**call_args, "limit": 1000}, timeout_sec)
+            clang_script, build_dir, workspace_root, targets, cmd, call_args, timeout_sec)
         items = dedupe_items(all_items)
         total = len(items)
         out_items = items[:requested_limit]
@@ -309,10 +309,9 @@ def route_tool_call(clang_script: Path, build_dir: str, workspace_root: Path,
                     "items": [], "page": {"next_cursor": None, "truncated": False, "total_matches": 0}}
 
         if action in ("find", "list"):
-            requested_limit = parse_int(call_args.get("limit", 100), 100, 1, 1000)
+            requested_limit = parse_int(call_args.get("limit", 100), 100, 1, 10000)
             requested_cursor = parse_cursor(call_args.get("cursor"))
-            req = {**call_args, "limit": 1000}
-            req.pop("cursor", None)
+            req = {k: v for k, v in call_args.items() if k != "cursor"}
             all_items, all_warnings, had_error = _aggregate_backends(
                 clang_script, build_dir, workspace_root, targets, cmd, req, timeout_sec)
             items = dedupe_items(all_items)
