@@ -44,7 +44,7 @@ def _resolve_refs(obj: Any, defs: dict[str, Any], depth: int = 0) -> Any:
                     if def_name in defs:
                         return _resolve_refs(defs[def_name], defs, depth + 1)
                     break
-        return {k: _resolve_refs(v, defs, depth + 1) for k, v in obj.items() if k != "additionalProperties"}
+        return {k: _resolve_refs(v, defs, depth + 1) for k, v in obj.items() if k not in ("additionalProperties", "enum")}
     if isinstance(obj, list):
         return [_resolve_refs(v, defs, depth + 1) for v in obj]
     return obj
