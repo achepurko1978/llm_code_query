@@ -236,6 +236,19 @@ impl Cursor {
     pub fn is_translation_unit(&self) -> bool {
         self.kind() == CXCursor_TranslationUnit
     }
+
+    /// Return the source extent (start_line, end_line, start_col, end_col) of this cursor.
+    pub fn extent(&self) -> (u32, u32, u32, u32) {
+        let range = unsafe { clang_getCursorExtent(self.raw) };
+        let start = unsafe { clang_getRangeStart(range) };
+        let end = unsafe { clang_getRangeEnd(range) };
+        let (mut sl, mut sc, mut el, mut ec) = (0u32, 0u32, 0u32, 0u32);
+        unsafe {
+            clang_getSpellingLocation(start, ptr::null_mut(), &mut sl, &mut sc, ptr::null_mut());
+            clang_getSpellingLocation(end, ptr::null_mut(), &mut el, &mut ec, ptr::null_mut());
+        }
+        (sl, el, sc, ec)
+    }
 }
 
 impl PartialEq for Cursor {

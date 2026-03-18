@@ -139,6 +139,7 @@ pub fn tool_cpp_semantic_query(idx: &IndexData, req: &serde_json::Map<String, Va
 
     let scope = req.get("scope").and_then(|v| v.as_object());
     let where_clause = req.get("where").and_then(|v| v.as_object());
+    let include_source = req.get("include_source").and_then(|v| v.as_bool()).unwrap_or(false);
     let limit = req.get("limit").and_then(|v| v.as_i64()).unwrap_or(100).max(1).min(1000) as usize;
     let cursor = req.get("cursor").and_then(|v| v.as_str());
     let fields: Option<HashSet<String>> = req.get("fields").and_then(|v| v.as_array())
@@ -173,7 +174,13 @@ pub fn tool_cpp_semantic_query(idx: &IndexData, req: &serde_json::Map<String, Va
             .filter(|e| e.entity == entity)
             .filter(|e| passes_scope(e, scope))
             .filter(|e| passes_where(idx, e, where_clause))
-            .map(|e| Value::Object(e.summary.clone()))
+            .map(|e| {
+                let mut s = e.summary.clone();
+                if include_source {
+                    enrich_with_source(e, &mut s);
+                }
+                Value::Object(s)
+            })
             .collect()
     };
 
@@ -236,6 +243,7 @@ pub fn tool_cpp_describe_symbol(idx: &IndexData, req: &serde_json::Map<String, V
 
     let include_relations = req.get("include_relations").and_then(|v| v.as_bool()).unwrap_or(true);
     let relation_limit = req.get("relation_limit").and_then(|v| v.as_i64()).unwrap_or(20).max(0).min(100) as usize;
+    let include_source = req.get("include_source").and_then(|v| v.as_bool()).unwrap_or(false);
 
     let entry_idx = match idx.by_id.get(sid) {
         Some(&i) => i,
@@ -256,7 +264,8 @@ pub fn tool_cpp_describe_symbol(idx: &IndexData, req: &serde_json::Map<String, V
         }
     };
 
-    let mut s = idx.symbols[entry_idx].summary.clone();
+    let entry = &idx.symbols[entry_idx];
+    let mut s = entry.summary.clone();
 
     if include_relations {
         let rels = build_relations(idx, sid, relation_limit);
@@ -265,12 +274,41 @@ pub fn tool_cpp_describe_symbol(idx: &IndexData, req: &serde_json::Map<String, V
         }
     }
 
+    if include_source {
+        enrich_with_source(entry, &mut s);
+    }
+
     let mut out = serde_json::Map::new();
     out.insert("status".to_string(), Value::String("ok".to_string()));
     out.insert("result_kind".to_string(), Value::String("describe_symbol".to_string()));
     out.insert("item".to_string(), Value::Object(s));
     out.insert("warnings".to_string(), Value::Array(vec![]));
     Value::Object(out)
+}
+
+/// Attach `source` and `extent` fields to a symbol summary using the entry's stored extent.
+fn enrich_with_source(entry: &SymbolEntry, summary: &mut serde_json::Map<String, Value>) {
+    let (start, end) = entry.extent;
+    if start == 0 || end < start { return; }
+    let file_path = match entry.file_norm.as_deref()
+        .or_else(|| entry.summary.get("location")
+            .and_then(|l| l.get("file"))
+            .and_then(|f| f.as_str()))
+    {
+        Some(p) => p.to_string(),
+        None => return,
+    };
+    if let Ok(content) = std::fs::read_to_string(&file_path) {
+        let lines: Vec<&str> = content.lines().collect();
+        let lo = (start as usize).saturating_sub(1);
+        let hi = (end as usize).min(lines.len());
+        let source = lines[lo..hi].join("\n");
+        summary.insert("source".to_string(), Value::String(source));
+        summary.insert("extent".to_string(), serde_json::json!({
+            "start_line": start,
+            "end_line": end
+        }));
+    }
 }
 
 fn build_relations(idx: &IndexData, sid: &str, limit: usize) -> serde_json::Map<String, Value> {
