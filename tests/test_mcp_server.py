@@ -266,23 +266,87 @@ class TestTargetFilesForTool:
     def test_resolve_symbol_with_file(self, tmp_path: Path):
         f = tmp_path / "x.cpp"
         f.write_text("")
-        result = srv.target_files_for_tool("cpp_resolve_symbol", {"file": str(f)}, self.all_files, tmp_path)
-        assert result == [str(f.resolve())]
+        files, is_dir = srv.target_files_for_tool("cpp_resolve_symbol", {"file": str(f)}, self.all_files, tmp_path)
+        assert files == [str(f.resolve())]
+        assert is_dir is False
 
     def test_resolve_symbol_no_file(self):
-        assert srv.target_files_for_tool("cpp_resolve_symbol", {}, self.all_files, self.ws) == self.all_files
+        files, is_dir = srv.target_files_for_tool("cpp_resolve_symbol", {}, self.all_files, self.ws)
+        assert files == self.all_files
+        assert is_dir is False
 
     def test_semantic_query_with_scope_file(self, tmp_path: Path):
         f = tmp_path / "y.cpp"
         f.write_text("")
-        result = srv.target_files_for_tool("cpp_semantic_query", {"scope": {"file": str(f)}}, self.all_files, tmp_path)
-        assert result == [str(f.resolve())]
+        files, is_dir = srv.target_files_for_tool("cpp_semantic_query", {"scope": {"file": str(f)}}, self.all_files, tmp_path)
+        assert files == [str(f.resolve())]
+        assert is_dir is False
 
     def test_semantic_query_no_scope(self):
-        assert srv.target_files_for_tool("cpp_semantic_query", {}, self.all_files, self.ws) == self.all_files
+        files, is_dir = srv.target_files_for_tool("cpp_semantic_query", {}, self.all_files, self.ws)
+        assert files == self.all_files
+        assert is_dir is False
 
     def test_describe_symbol(self):
-        assert srv.target_files_for_tool("cpp_describe_symbol", {"symbol_id": "s1"}, self.all_files, self.ws) == self.all_files
+        files, is_dir = srv.target_files_for_tool("cpp_describe_symbol", {"symbol_id": "s1"}, self.all_files, self.ws)
+        assert files == self.all_files
+        assert is_dir is False
+
+    def test_resolve_symbol_with_directory(self, tmp_path: Path):
+        d = tmp_path / "src"
+        d.mkdir()
+        all_files = [str(d / "a.cpp"), str(d / "b.cpp"), str(tmp_path / "other.cpp")]
+        files, is_dir = srv.target_files_for_tool("cpp_resolve_symbol", {"file": str(d)}, all_files, tmp_path)
+        assert files == [str(d / "a.cpp"), str(d / "b.cpp")]
+        assert is_dir is True
+
+    def test_semantic_query_with_scope_directory(self, tmp_path: Path):
+        d = tmp_path / "lib"
+        d.mkdir()
+        all_files = [str(d / "x.cpp"), str(tmp_path / "main.cpp")]
+        files, is_dir = srv.target_files_for_tool("cpp_semantic_query", {"scope": {"file": str(d)}}, all_files, tmp_path)
+        assert files == [str(d / "x.cpp")]
+        assert is_dir is True
+
+    def test_directory_no_matching_files(self, tmp_path: Path):
+        d = tmp_path / "empty_dir"
+        d.mkdir()
+        files, is_dir = srv.target_files_for_tool("cpp_resolve_symbol", {"file": str(d)}, ["/other/a.cpp"], tmp_path)
+        assert files == []
+        assert is_dir is True
+
+
+class TestStripDirScope:
+    def test_semantic_query_strips_file_from_scope(self):
+        args = {"action": "list", "entity": "function", "scope": {"file": "dir", "extra": "val"}}
+        result = srv._strip_dir_scope(args, "cpp_semantic_query")
+        assert result == {"action": "list", "entity": "function", "scope": {"extra": "val"}}
+
+    def test_semantic_query_removes_empty_scope(self):
+        args = {"action": "list", "entity": "function", "scope": {"file": "dir"}}
+        result = srv._strip_dir_scope(args, "cpp_semantic_query")
+        assert result == {"action": "list", "entity": "function"}
+        assert "scope" not in result
+
+    def test_resolve_symbol_strips_file(self):
+        args = {"file": "dir", "name": "add"}
+        result = srv._strip_dir_scope(args, "cpp_resolve_symbol")
+        assert result == {"name": "add"}
+
+    def test_does_not_mutate_original(self):
+        args = {"action": "list", "scope": {"file": "dir"}}
+        srv._strip_dir_scope(args, "cpp_semantic_query")
+        assert args["scope"] == {"file": "dir"}
+
+    def test_no_scope_passthrough(self):
+        args = {"action": "list", "entity": "function"}
+        result = srv._strip_dir_scope(args, "cpp_semantic_query")
+        assert result == args
+
+    def test_describe_symbol_passthrough(self):
+        args = {"symbol_id": "s1"}
+        result = srv._strip_dir_scope(args, "cpp_describe_symbol")
+        assert result == args
 
 
 # ---------------------------------------------------------------------------
@@ -477,6 +541,26 @@ class TestRouteToolCall:
                                      "cpp_semantic_query", {"action": "exists", "entity": "function"}, 10)
         assert result["status"] == "error"
         assert result["exists"] is False
+
+    @mock.patch("mcp_server.run_backend")
+    def test_directory_scope_strips_file_from_backend_args(self, mock_be, tmp_path: Path):
+        """When scope.file is a directory, backend should NOT receive scope.file."""
+        d = tmp_path / "src"
+        d.mkdir()
+        src1, src2 = str(d / "a.cpp"), str(d / "b.cpp")
+        all_files = [src1, src2, str(tmp_path / "other.cpp")]
+        mock_be.return_value = {"status": "ok", "items": [{"symbol_id": "s1"}], "warnings": []}
+        result = srv.route_tool_call(Path("x"), "bd", tmp_path, all_files,
+                                     "cpp_semantic_query",
+                                     {"action": "list", "entity": "function", "scope": {"file": str(d)}}, 10)
+        assert result["status"] == "ok"
+        # Backend should have been called twice (once per file in dir)
+        assert mock_be.call_count == 2
+        # The call_args passed to backend should NOT contain scope.file
+        for call in mock_be.call_args_list:
+            args_obj = call[0][4]  # 5th positional arg: args_obj
+            scope = args_obj.get("scope", {})
+            assert "file" not in scope
 
 
 # ---------------------------------------------------------------------------
