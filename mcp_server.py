@@ -194,15 +194,31 @@ def parse_cursor(value: Any) -> int:
         return 0
 
 
+def _is_header_location(item: dict[str, Any]) -> bool:
+    """Return True if this item's location points to a header file."""
+    loc = item.get("location")
+    if isinstance(loc, dict):
+        f = loc.get("file", "")
+        if isinstance(f, str):
+            ext = Path(f).suffix.lower()
+            return ext in {".h", ".hh", ".hpp", ".hxx"}
+    return False
+
+
 def dedupe_items(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    seen: set[str] = set()
+    seen: dict[str, int] = {}  # key -> index in out
     out: list[dict[str, Any]] = []
     for item in items:
         sid = item.get("symbol_id")
         key = f"sid:{sid}" if isinstance(sid, str) and sid else f"json:{json.dumps(item, sort_keys=True)}"
         if key not in seen:
-            seen.add(key)
+            seen[key] = len(out)
             out.append(item)
+        else:
+            # Prefer source file locations over header declarations
+            prev_idx = seen[key]
+            if _is_header_location(out[prev_idx]) and not _is_header_location(item):
+                out[prev_idx] = item
     return out
 
 

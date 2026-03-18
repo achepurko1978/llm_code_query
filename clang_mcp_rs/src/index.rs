@@ -114,6 +114,36 @@ fn build_index(tu: &TranslationUnit, src: &str, workspace_root: Option<&str>) ->
         let e = match entity_of(c.kind()) { Some(e) => e, None => continue };
         if !in_scope(&c) { continue; }
         let sid = symbol_id(&c);
+        let is_def = c.is_definition();
+
+        // When the same symbol_id is seen twice (e.g. declaration in .h then
+        // definition in .cpp), prefer the definition so that `location` points
+        // to the actual implementation rather than the forward declaration.
+        if let Some(&prev_idx) = by_id.get(&sid) {
+            let prev_is_def = entries[prev_idx].is_definition;
+            if !prev_is_def && is_def {
+                // Replace declaration with definition
+                let summary = symbol_summary(&c);
+                let file_norm = c.location().file.as_ref().map(|f| norm(f));
+                let (ext_start, ext_end, _, _) = c.extent();
+                let entry = SymbolEntry {
+                    summary,
+                    symbol_id: sid.clone(),
+                    entity: e.to_string(),
+                    name: c.spelling(),
+                    cursor_kind: c.kind(),
+                    is_definition: true,
+                    file_norm,
+                    param_types: callable_param_types(&c),
+                    extent: (ext_start, ext_end),
+                };
+                entries[prev_idx] = entry;
+                cursors[prev_idx] = c;
+            }
+            // Otherwise skip: already have a definition, or both are declarations
+            continue;
+        }
+
         let summary = symbol_summary(&c);
         let file_norm = c.location().file.as_ref().map(|f| norm(f));
 
@@ -125,7 +155,7 @@ fn build_index(tu: &TranslationUnit, src: &str, workspace_root: Option<&str>) ->
             entity: e.to_string(),
             name: c.spelling(),
             cursor_kind: c.kind(),
-            is_definition: c.is_definition(),
+            is_definition: is_def,
             file_norm,
             param_types: callable_param_types(&c),
             extent: (ext_start, ext_end),
