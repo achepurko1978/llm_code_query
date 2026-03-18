@@ -438,8 +438,8 @@
         "limit": {
           "type": "integer",
           "minimum": 1,
-          "maximum": 100,
-          "default": 20
+          "maximum": 50000,
+          "default": 5000
         }
       },
       "required": [
@@ -510,8 +510,8 @@
         "limit": {
           "type": "integer",
           "minimum": 1,
-          "maximum": 1000,
-          "default": 100
+          "maximum": 50000,
+          "default": 5000
         },
         "cursor": {
           "type": "string"
@@ -668,8 +668,8 @@
         "relation_limit": {
           "type": "integer",
           "minimum": 0,
-          "maximum": 100,
-          "default": 20
+          "maximum": 50000,
+          "default": 5000
         },
         "include_source": {
           "type": "boolean",

@@ -45,7 +45,7 @@ pub fn tool_cpp_resolve_symbol(idx: &IndexData, req: &serde_json::Map<String, Va
         }
     };
 
-    let limit = req.get("limit").and_then(|v| v.as_i64()).unwrap_or(20).max(1).min(100) as usize;
+    let limit = req.get("limit").and_then(|v| v.as_i64()).unwrap_or(5000).clamp(1, 50000) as usize;
     let nlow = name.to_lowercase();
 
     let mut exact: Vec<(usize, &SymbolEntry)> = Vec::new();
@@ -140,7 +140,7 @@ pub fn tool_cpp_semantic_query(idx: &IndexData, req: &serde_json::Map<String, Va
     let scope = req.get("scope").and_then(|v| v.as_object());
     let where_clause = req.get("where").and_then(|v| v.as_object());
     let include_source = req.get("include_source").and_then(|v| v.as_bool()).unwrap_or(false);
-    let limit = req.get("limit").and_then(|v| v.as_i64()).unwrap_or(100).max(1).min(1000) as usize;
+    let limit = req.get("limit").and_then(|v| v.as_i64()).unwrap_or(5000).clamp(1, 50000) as usize;
     let cursor = req.get("cursor").and_then(|v| v.as_str());
     let fields: Option<HashSet<String>> = req.get("fields").and_then(|v| v.as_array())
         .map(|arr| arr.iter().filter_map(|v| v.as_str().map(String::from)).collect());
@@ -242,7 +242,7 @@ pub fn tool_cpp_describe_symbol(idx: &IndexData, req: &serde_json::Map<String, V
     };
 
     let include_relations = req.get("include_relations").and_then(|v| v.as_bool()).unwrap_or(true);
-    let relation_limit = req.get("relation_limit").and_then(|v| v.as_i64()).unwrap_or(20).max(0).min(100) as usize;
+    let relation_limit = req.get("relation_limit").and_then(|v| v.as_i64()).unwrap_or(5000).clamp(0, 50000) as usize;
     let include_source = req.get("include_source").and_then(|v| v.as_bool()).unwrap_or(false);
 
     let entry_idx = match idx.by_id.get(sid) {
