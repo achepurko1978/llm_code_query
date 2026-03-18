@@ -88,6 +88,12 @@ cd clang_mcp_rs
 cargo test
 ```
 
+### Install
+
+```bash
+cargo install --path . --root .
+```
+
 ---
 
 ## Use With Copilot (Any C++ Workspace)
