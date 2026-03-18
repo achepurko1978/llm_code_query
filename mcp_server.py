@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import logging
 import subprocess
 import sys
 from pathlib import Path
@@ -19,6 +20,8 @@ from mcp.server.stdio import stdio_server
 
 SERVER_NAME = "clang-cpp-mcp"
 SERVER_VERSION = "0.1.0"
+
+logger = logging.getLogger(SERVER_NAME)
 
 VALID_TOOLS = frozenset({"cpp_resolve_symbol", "cpp_semantic_query", "cpp_describe_symbol"})
 VALID_ACTIONS = frozenset({"find", "list", "count", "exists"})
@@ -144,16 +147,22 @@ def run_backend(clang_script: Path, build_dir: str, src_file: str, cmd: str,
     if workspace_root:
         command += ["--workspace-root", workspace_root]
     command += [cmd, "--request-json", json.dumps(args_obj, ensure_ascii=True)]
+    logger.debug("backend call: %s --file %s  args=%s", cmd, src_file, json.dumps(args_obj, sort_keys=True))
     try:
         proc = subprocess.run(command, capture_output=True, text=True, timeout=timeout_sec)
     except subprocess.TimeoutExpired:
+        logger.warning("backend timeout: %s --file %s after %ds", cmd, src_file, timeout_sec)
         return _backend_error("BACKEND_TIMEOUT", f"backend timed out for {src_file} after {timeout_sec}s")
     if proc.returncode != 0:
         msg = (proc.stderr or "").strip() or (proc.stdout or "").strip() or f"backend failed with exit code {proc.returncode}"
+        logger.warning("backend error: %s --file %s  rc=%d  %s", cmd, src_file, proc.returncode, msg[:200])
         return _backend_error("BACKEND_ERROR", msg)
     try:
-        return json.loads(proc.stdout)
+        result = json.loads(proc.stdout)
+        logger.debug("backend ok: %s --file %s  status=%s", cmd, src_file, result.get("status"))
+        return result
     except json.JSONDecodeError as e:
+        logger.warning("backend bad json: %s --file %s  %s", cmd, src_file, e)
         return _backend_error("BACKEND_BAD_JSON", str(e))
 
 
@@ -390,6 +399,7 @@ def create_server(tool_defs: list[dict[str, Any]], clang_script: Path,
     @server.call_tool(validate_input=False)
     async def call_tool(name: str, arguments: dict[str, Any]) -> types.CallToolResult:
         nonlocal _build_dir, _source_files
+        logger.info("call_tool %s  args=%s", name, json.dumps(arguments, sort_keys=True))
 
         if name not in VALID_TOOLS:
             return _tool_result(_backend_error("UNKNOWN_TOOL", f"unknown tool: {name}"))
@@ -422,7 +432,14 @@ def main() -> int:
     parser.add_argument("--backend-timeout", type=int, default=12)
     parser.add_argument("--tools-json", default="tools.json")
     parser.add_argument("--clang-script", default="clang_mcp.py")
+    parser.add_argument("-v", "--verbose", action="store_true", help="enable debug-level traces")
     args = parser.parse_args()
+
+    logging.basicConfig(
+        level=logging.DEBUG if args.verbose else logging.INFO,
+        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+        stream=sys.stderr,
+    )
 
     base_dir = Path.cwd()
     workspace_root = norm_path(args.workspace_root, base_dir)
