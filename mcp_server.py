@@ -188,14 +188,23 @@ def map_tool_name_to_cmd(name: str) -> str | None:
 
 
 def run_backend(clang_script: Path, build_dir: str, src_file: str, cmd: str, args_obj: dict[str, Any], timeout_sec: int, workspace_root: str | None = None) -> dict[str, Any]:
-    command = [
-        sys.executable,
-        str(clang_script),
-        "--build-dir",
-        build_dir,
-        "--file",
-        src_file,
-    ]
+    if ".py" == clang_script.suffix.lower():
+        command = [
+            sys.executable,
+            str(clang_script),
+            "--build-dir",
+            build_dir,
+            "--file",
+            src_file,
+        ]
+    else:
+        command = [
+            str(clang_script),
+            "--build-dir",
+            build_dir,
+            "--file",
+            src_file,
+        ]
     if workspace_root:
         command += ["--workspace-root", workspace_root]
     command += [
