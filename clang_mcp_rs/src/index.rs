@@ -247,7 +247,11 @@ pub fn is_in_file(entry: &SymbolEntry, src: &str) -> bool {
 pub fn passes_scope(entry: &SymbolEntry, scope: Option<&serde_json::Map<String, Value>>) -> bool {
     let scope = match scope { Some(s) => s, None => return true };
 
-    if let Some(Value::String(file)) = scope.get("file") {
+    // Accept both "file" and "directory" as the scope key
+    let file_scope = scope.get("file")
+        .or_else(|| scope.get("directory"))
+        .and_then(|v| v.as_str());
+    if let Some(file) = file_scope {
         match &entry.file_norm {
             Some(f) if *f == norm(file) => {}
             _ => return false,

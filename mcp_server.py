@@ -273,11 +273,22 @@ def _aggregate_backends(clang_script: Path, build_dir: str, workspace_root: Path
     return all_items, all_warnings, had_error
 
 
+def _normalize_scope_directory(call_args: dict[str, Any]) -> dict[str, Any]:
+    """Normalize scope.directory to scope.file so callers can use either key."""
+    scope = call_args.get("scope")
+    if isinstance(scope, dict) and "directory" in scope and "file" not in scope:
+        new_scope = {**scope, "file": scope["directory"]}
+        del new_scope["directory"]
+        return {**call_args, "scope": new_scope}
+    return call_args
+
+
 def route_tool_call(clang_script: Path, build_dir: str, workspace_root: Path,
                     files: list[str], cmd: str, call_args: dict[str, Any],
                     timeout_sec: int) -> dict[str, Any]:
     if not files:
         return _backend_error("NO_SOURCE_FILES", "no source files found in compile_commands.json")
+    call_args = _normalize_scope_directory(call_args)
     targets, dir_scope = target_files_for_tool(cmd, call_args, files, workspace_root)
     if not targets:
         return _backend_error("NO_TARGET_FILES", "no matching target files for request")
