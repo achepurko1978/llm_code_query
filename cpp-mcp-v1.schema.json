@@ -296,10 +296,12 @@
     },
     "Scope": {
       "type": "object",
+      "description": "WHERE to look — narrows the search to a file, directory, function, class, or namespace. Use scope.file for file/directory filtering. Do NOT put file paths in 'where'.",
       "additionalProperties": false,
       "properties": {
         "file": {
-          "type": "string"
+          "type": "string",
+          "description": "Workspace-root-relative file path or directory path (e.g. 'VSC/FdcSP/src/Foo.cpp' or 'VSC/FdcSP/src'). This is the ONLY place to specify file/directory scope — never put file paths in the 'where' filter."
         },
         "inside_function": {
           "type": "string",
@@ -339,6 +341,7 @@
     },
     "Where": {
       "type": "object",
+      "description": "WHAT to match — filters symbols by their properties (name, return_type, access, etc.). Do NOT put file paths here; use 'scope.file' instead.",
       "additionalProperties": false,
       "properties": {
         "name": {
@@ -502,10 +505,12 @@
           "$ref": "#/$defs/Entity"
         },
         "scope": {
-          "$ref": "#/$defs/Scope"
+          "$ref": "#/$defs/Scope",
+          "description": "WHERE to look: narrows search to a file, directory, class, or namespace. Put file/directory paths here in scope.file, NOT in 'where'."
         },
         "where": {
-          "$ref": "#/$defs/Where"
+          "$ref": "#/$defs/Where",
+          "description": "WHAT to match: filters by symbol properties like name, return_type, access, static, const, etc. Do NOT put file paths here."
         },
         "limit": {
           "type": "integer",
