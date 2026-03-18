@@ -153,10 +153,14 @@ def run_backend(clang_script: Path, build_dir: str, src_file: str, cmd: str,
     except subprocess.TimeoutExpired:
         logger.warning("backend timeout: %s --file %s after %ds", cmd, src_file, timeout_sec)
         return _backend_error("BACKEND_TIMEOUT", f"backend timed out for {src_file} after {timeout_sec}s")
+    if proc.stderr:
+        logger.debug("backend stderr: %s --file %s\n%s", cmd, src_file, proc.stderr.rstrip())
     if proc.returncode != 0:
         msg = (proc.stderr or "").strip() or (proc.stdout or "").strip() or f"backend failed with exit code {proc.returncode}"
         logger.warning("backend error: %s --file %s  rc=%d  %s", cmd, src_file, proc.returncode, msg[:200])
+        logger.debug("backend stdout on error: %s --file %s\n%s", cmd, src_file, (proc.stdout or "").rstrip())
         return _backend_error("BACKEND_ERROR", msg)
+    logger.debug("backend stdout: %s --file %s\n%s", cmd, src_file, proc.stdout.rstrip())
     try:
         result = json.loads(proc.stdout)
         logger.debug("backend ok: %s --file %s  status=%s", cmd, src_file, result.get("status"))
