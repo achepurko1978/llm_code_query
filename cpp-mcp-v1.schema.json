@@ -303,6 +303,10 @@
           "type": "string",
           "description": "Workspace-root-relative file path or directory path (e.g. 'VSC/FdcSP/src/Foo.cpp' or 'VSC/FdcSP/src'). This is the ONLY place to specify file/directory scope — never put file paths in the 'where' filter."
         },
+        "directory": {
+          "type": "string",
+          "description": "Alias for 'file' — workspace-root-relative directory path (e.g. 'VSC/FdcSP/src'). Prefer using 'file' which accepts both files and directories."
+        },
         "inside_function": {
           "type": "string",
           "description": "Opaque symbol_id of containing function/method/constructor/destructor."
