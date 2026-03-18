@@ -187,7 +187,7 @@ def map_tool_name_to_cmd(name: str) -> str | None:
     return m.get(name)
 
 
-def run_backend(clang_script: Path, build_dir: str, src_file: str, cmd: str, args_obj: dict[str, Any], timeout_sec: int) -> dict[str, Any]:
+def run_backend(clang_script: Path, build_dir: str, src_file: str, cmd: str, args_obj: dict[str, Any], timeout_sec: int, workspace_root: str | None = None) -> dict[str, Any]:
     command = [
         sys.executable,
         str(clang_script),
@@ -195,6 +195,10 @@ def run_backend(clang_script: Path, build_dir: str, src_file: str, cmd: str, arg
         build_dir,
         "--file",
         src_file,
+    ]
+    if workspace_root:
+        command += ["--workspace-root", workspace_root]
+    command += [
         cmd,
         "--request-json",
         json.dumps(args_obj, ensure_ascii=True),
@@ -381,7 +385,7 @@ def route_tool_call(clang_script: Path, build_dir: str, workspace_root: Path, fi
         had_error = False
 
         for src in targets:
-            payload = run_backend(clang_script, build_dir, src, cmd, req, timeout_sec)
+            payload = run_backend(clang_script, build_dir, src, cmd, req, timeout_sec, str(workspace_root))
             if payload.get("status") == "error":
                 had_error = True
                 all_warnings.extend(payload.get("warnings", []))
@@ -424,7 +428,7 @@ def route_tool_call(clang_script: Path, build_dir: str, workspace_root: Path, fi
             had_error = False
 
             for src in targets:
-                payload = run_backend(clang_script, build_dir, src, cmd, req, timeout_sec)
+                payload = run_backend(clang_script, build_dir, src, cmd, req, timeout_sec, str(workspace_root))
                 if payload.get("status") == "error":
                     had_error = True
                     all_warnings.extend(payload.get("warnings", []))
@@ -454,7 +458,7 @@ def route_tool_call(clang_script: Path, build_dir: str, workspace_root: Path, fi
             all_warnings: list[dict[str, Any]] = []
             had_error = False
             for src in targets:
-                payload = run_backend(clang_script, build_dir, src, cmd, call_args, timeout_sec)
+                payload = run_backend(clang_script, build_dir, src, cmd, call_args, timeout_sec, str(workspace_root))
                 if payload.get("status") == "error":
                     had_error = True
                     all_warnings.extend(payload.get("warnings", []))
@@ -467,7 +471,7 @@ def route_tool_call(clang_script: Path, build_dir: str, workspace_root: Path, fi
         all_warnings: list[dict[str, Any]] = []
         had_error = False
         for src in targets:
-            payload = run_backend(clang_script, build_dir, src, cmd, call_args, timeout_sec)
+            payload = run_backend(clang_script, build_dir, src, cmd, call_args, timeout_sec, str(workspace_root))
             if payload.get("status") == "error":
                 had_error = True
                 all_warnings.extend(payload.get("warnings", []))
@@ -485,7 +489,7 @@ def route_tool_call(clang_script: Path, build_dir: str, workspace_root: Path, fi
     }
 
     for src in targets:
-        payload = run_backend(clang_script, build_dir, src, cmd, call_args, timeout_sec)
+        payload = run_backend(clang_script, build_dir, src, cmd, call_args, timeout_sec, str(workspace_root))
         if payload.get("status") == "error":
             continue
         if not is_no_match_describe(payload):
