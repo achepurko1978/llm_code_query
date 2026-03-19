@@ -1,0 +1,27 @@
+{
+    "status": "ok",
+    "result_kind": "list",
+    "items": [
+        {
+            "name": "unique_ptr"
+        },
+        {
+            "name": "unique_ptr"
+        },
+        {
+            "name": "Parser"
+        },
+        {
+            "name": "Load"
+        },
+        {
+            "name": "operator bool"
+        }
+    ],
+    "warnings": [],
+    "page": {
+        "next_cursor": "5",
+        "truncated": true,
+        "total_matches": 69
+    }
+}

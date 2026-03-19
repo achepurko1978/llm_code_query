@@ -1,0 +1,28 @@
+{
+    "status": "ok",
+    "result_kind": "doctor",
+    "ok": true,
+    "checks": [
+        {
+            "name": "libclang_runtime",
+            "ok": true,
+            "message": "libclang runtime is usable"
+        },
+        {
+            "name": "build_dir_exists",
+            "ok": true,
+            "message": "/workspace/samples/cpp/build-rust-tests"
+        },
+        {
+            "name": "compile_commands_json",
+            "ok": true,
+            "message": "/workspace/samples/cpp/build-rust-tests/compile_commands.json"
+        },
+        {
+            "name": "source_file_exists",
+            "ok": true,
+            "message": "/workspace/samples/cpp/src/parse.cpp"
+        }
+    ],
+    "warnings": []
+}

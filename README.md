@@ -110,6 +110,35 @@ cd clang_mcp_rs
 cargo test
 ```
 
+### CLI examples with golden JSON outputs
+
+Prebuilt sample cases for `samples/cpp` are stored in `samples/cli_examples`.
+Each example is a real, copy-paste-ready CLI command.
+
+List all available examples:
+
+```bash
+source /workspace/samples/cli_examples/cli.sh
+list_examples
+
+# Copy-paste any example to run it:
+example_doctor
+example_resolve_load_ambiguous | jq .items[0]
+example_semantic_count_calls_parse
+```
+
+Validate all examples against saved golden outputs:
+
+```bash
+bash /workspace/samples/cli_examples/cli.sh validate
+```
+
+Refresh golden outputs after intentional behavior changes:
+
+```bash
+bash /workspace/samples/cli_examples/update_expected.sh
+```
+
 ### Install
 
 ```bash

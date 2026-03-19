@@ -1,0 +1,21 @@
+{
+    "status": "ok",
+    "result_kind": "list",
+    "items": [
+        {
+            "symbol_id": "file:/workspace/samples/cpp/src/parse.cpp",
+            "entity": "file",
+            "name": "parse.cpp",
+            "qualified_name": "/workspace/samples/cpp/src/parse.cpp",
+            "location": {
+                "file": "/workspace/samples/cpp/src/parse.cpp"
+            }
+        }
+    ],
+    "warnings": [],
+    "page": {
+        "next_cursor": null,
+        "truncated": false,
+        "total_matches": 1
+    }
+}

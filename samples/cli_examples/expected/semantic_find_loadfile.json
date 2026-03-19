@@ -1,0 +1,11 @@
+{
+    "status": "ok",
+    "result_kind": "find",
+    "items": [],
+    "warnings": [],
+    "page": {
+        "next_cursor": null,
+        "truncated": false,
+        "total_matches": 0
+    }
+}
