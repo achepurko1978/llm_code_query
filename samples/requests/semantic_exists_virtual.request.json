@@ -1,7 +1,0 @@
-{
-  "action": "exists",
-  "entity": "method",
-  "where": {
-    "virtual": true
-  }
-}

@@ -222,6 +222,5 @@ Required VS Code config (choose one):
 
 Not required for deployment:
 
-- `samples/` folder
 - `sample.cpp`
 - `cpp-mcp-v1.schema.json` (useful for documentation/reference, but not required at runtime by this server)
