@@ -22,13 +22,12 @@ When remote source changes, rebuild the image to pick up updates:
 docker compose build dev
 ```
 
-Two back-end implementations are available — the original Python script and a
-Rust rewrite that produces identical output but compiles to a single native
-binary.
+The MCP server is implemented in Python (`mcp_server.py`) and can call a C++
+analysis back-end binary (Rust implementation in `clang_mcp_rs`).
 
 ---
 
-## Python Back-End
+## Python MCP Server
 
 ### Install dependencies
 
@@ -39,8 +38,7 @@ python -m pip install --break-system-packages mcp pytest
 ```
 
 The MCP server (`mcp_server.py`) requires the [MCP Python SDK](https://pypi.org/project/mcp/)
-(`mcp` package, which includes `anyio`). The clang back-end (`clang_mcp.py`)
-requires `python3-clang`.
+(`mcp` package, which includes `anyio`).
 
 ### Test MCP server locally
 
@@ -65,16 +63,16 @@ python -m pytest tests -q
 ### Prepare compile database
 
 ```bash
-CC=clang CXX=clang++ cmake -S . -B build
+CC=clang CXX=clang++ cmake -S samples/cpp -B samples/cpp/build-rust-tests -D CMAKE_EXPORT_COMPILE_COMMANDS=ON
 ```
 
 ### Run
 
 ```bash
-python clang_mcp.py doctor
-python clang_mcp.py --build-dir build --file sample.cpp cpp_resolve_symbol --request-json '{"name":"add"}'
-python clang_mcp.py --build-dir build --file sample.cpp cpp_semantic_query --request-json '{"action":"list","entity":"function"}'
-python clang_mcp.py --build-dir build --file sample.cpp cpp_describe_symbol --request-json '{"symbol_id":"c:@F@add#I#I#"}'
+python mcp_server.py \
+	--workspace-root /workspace \
+	--build-dir /workspace/samples/cpp/build-rust-tests \
+	--clang-script /workspace/clang_mcp_rs/target/release/clang_mcp
 ```
 
 ---
@@ -102,23 +100,23 @@ The binary is produced at `clang_mcp_rs/target/release/clang_mcp`.
 
 ### Run
 
-The CLI is a drop-in replacement for the Python script:
+The Rust CLI is the back-end binary used by `mcp_server.py`:
 
 ```bash
 # Health check
-./clang_mcp_rs/target/release/clang_mcp --build-dir build --file sample.cpp doctor
+./clang_mcp_rs/target/release/clang_mcp --build-dir samples/cpp/build-rust-tests --file samples/cpp/src/parse.cpp doctor
 
 # Resolve a symbol
-./clang_mcp_rs/target/release/clang_mcp --build-dir build --file sample.cpp \
-    cpp_resolve_symbol --request-json '{"name":"add"}'
+./clang_mcp_rs/target/release/clang_mcp --build-dir samples/cpp/build-rust-tests --file samples/cpp/src/parse.cpp \
+	cpp_resolve_symbol --request-json '{"name":"Load"}'
 
 # Semantic query
-./clang_mcp_rs/target/release/clang_mcp --build-dir build --file sample.cpp \
+./clang_mcp_rs/target/release/clang_mcp --build-dir samples/cpp/build-rust-tests --file samples/cpp/src/parser.cpp \
     cpp_semantic_query --request-json '{"action":"list","entity":"function"}'
 
 # Describe a symbol
-./clang_mcp_rs/target/release/clang_mcp --build-dir build --file sample.cpp \
-    cpp_describe_symbol --request-json '{"symbol_id":"c:@F@add#I#I#"}'
+./clang_mcp_rs/target/release/clang_mcp --build-dir samples/cpp/build-rust-tests --file samples/cpp/include/yaml-cpp/exceptions.h \
+	cpp_describe_symbol --request-json '{"symbol_id":"c:@N@YAML@S@BadConversion"}'
 ```
 
 Requests can also be passed via `--request-file path/to/request.json`.
@@ -179,7 +177,7 @@ CC=clang CXX=clang++ cmake -S . -B build
 	"servers": {
 		"clang-cpp": {
 			"type": "stdio",
-			"command": "python3",
+			"command": "python",
 			"args": [
 				"${workspaceFolder}/mcp_server.py",
 				"--workspace-root",
@@ -223,7 +221,7 @@ script:
 	"servers": {
 		"clang-cpp": {
 			"type": "stdio",
-			"command": "python3",
+			"command": "python",
 			"args": [
 				"${workspaceFolder}/mcp_server.py",
 				"--workspace-root", "${workspaceFolder}",
@@ -239,17 +237,14 @@ Everything else (tool names, request/response format) is identical.
 
 ## Minimum Files To Deploy
 
-### Python back-end
+### MCP server
 
 - `mcp_server.py`
-- `clang_mcp.py`
 - `tools.json`
 
-### Rust back-end
+### Rust back-end (recommended)
 
-- `mcp_server.py`
 - `clang_mcp_rs/target/release/clang_mcp` (pre-built binary)
-- `tools.json`
 
 ### Common requirements
 
