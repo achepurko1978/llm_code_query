@@ -7,3 +7,6 @@
 **/.mypy_cache
 **/.venv
 **/venv
+build
+target
+clang_mcp_rs/target

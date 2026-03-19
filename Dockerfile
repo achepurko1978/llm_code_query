@@ -1,6 +1,8 @@
 FROM ubuntu:latest
 
 ENV DEBIAN_FRONTEND=noninteractive
+ARG GIT_REPO_URL=https://github.com/achepurko1978/llm_code_query.git
+ARG GIT_REF=main
 
 # Install build essentials and tooling required to add the official LLVM apt repo.
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -52,15 +54,18 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     cargo \
     && rm -rf /var/lib/apt/lists/*
 
-# Pre-build Rust dependencies so they are cached in the image.
-COPY clang_mcp_rs/Cargo.toml clang_mcp_rs/Cargo.lock /workspace/clang_mcp_rs/
-COPY clang_mcp_rs/.cargo /workspace/clang_mcp_rs/.cargo
-RUN mkdir -p /workspace/clang_mcp_rs/src \
-    && echo 'fn main() {}' > /workspace/clang_mcp_rs/src/main.rs \
-    && cd /workspace/clang_mcp_rs \
-    && cargo build --release 2>/dev/null || true \
-    && cargo build --release --tests 2>/dev/null || true \
-    && rm -rf src
+# Clone repository from GitHub directly at build time.
+RUN git clone --filter=blob:none "$GIT_REPO_URL" /workspace \
+    && cd /workspace \
+    && git checkout "$GIT_REF" \
+    && git submodule update --init --recursive
+
+# Optionally pre-build Rust target if the Rust backend exists in the cloned repo.
+RUN if [ -f /workspace/clang_mcp_rs/Cargo.toml ]; then \
+        cd /workspace/clang_mcp_rs \
+        && cargo build --release || true \
+        && cargo build --release --tests || true; \
+    fi
 
 WORKDIR /workspace
 

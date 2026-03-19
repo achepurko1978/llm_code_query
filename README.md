@@ -1,5 +1,27 @@
 # clang_mcp Quickstart
 
+## Docker (Repo Baked Into Image)
+
+The Docker setup now clones the repository directly from GitHub at build time
+and does not use a bind mount.
+
+```bash
+docker compose build dev
+docker compose run --rm dev bash
+```
+
+You can override the repository URL and revision (branch, tag, or commit):
+
+```bash
+GIT_REPO_URL=https://github.com/achepurko1978/llm_code_query.git GIT_REF=main docker compose build dev
+```
+
+When remote source changes, rebuild the image to pick up updates:
+
+```bash
+docker compose build dev
+```
+
 Two back-end implementations are available — the original Python script and a
 Rust rewrite that produces identical output but compiles to a single native
 binary.

@@ -1,13 +1,13 @@
-version: "3.9"
-
 services:
   dev:
+    image: llm-code-query-dev:latest
     build:
       context: .
       dockerfile: Dockerfile
+      args:
+        GIT_REPO_URL: ${GIT_REPO_URL:-https://github.com/achepurko1978/llm_code_query.git}
+        GIT_REF: ${GIT_REF:-main}
     container_name: llm-code-query-dev
     working_dir: /workspace
-    volumes:
-      - ./:/workspace
     stdin_open: true
     tty: true
