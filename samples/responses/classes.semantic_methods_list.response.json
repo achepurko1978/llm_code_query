@@ -60,7 +60,7 @@
       "static": false,
       "const": false,
       "virtual": true,
-      "override": true,
+      "override": false,
       "access": "public",
       "deleted": false,
       "defaulted": false,

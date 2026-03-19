@@ -231,6 +231,26 @@
             "$ref": "#/$defs/ParameterSummary"
           }
         },
+        "source": {
+          "type": "string",
+          "description": "Full source text of the symbol (declaration + body). Only present when include_source=true in the request."
+        },
+        "extent": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "start_line": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "end_line": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          "required": ["start_line", "end_line"],
+          "description": "Line range of the symbol in the source file. Only present when include_source=true."
+        },
         "relations": {
           "type": "object",
           "additionalProperties": false,
@@ -276,10 +296,16 @@
     },
     "Scope": {
       "type": "object",
+      "description": "WHERE to look — narrows the search to a file, directory, function, class, or namespace. Use scope.file for file/directory filtering. Do NOT put file paths in 'where'.",
       "additionalProperties": false,
       "properties": {
         "file": {
-          "type": "string"
+          "type": "string",
+          "description": "Workspace-root-relative file path or directory path (e.g. 'VSC/FdcSP/src/Foo.cpp' or 'VSC/FdcSP/src'). This is the ONLY place to specify file/directory scope — never put file paths in the 'where' filter."
+        },
+        "directory": {
+          "type": "string",
+          "description": "Alias for 'file' — workspace-root-relative directory path (e.g. 'VSC/FdcSP/src'). Prefer using 'file' which accepts both files and directories."
         },
         "inside_function": {
           "type": "string",
@@ -319,6 +345,7 @@
     },
     "Where": {
       "type": "object",
+      "description": "WHAT to match — filters symbols by their properties (name, return_type, access, etc.). Do NOT put file paths here; use 'scope.file' instead.",
       "additionalProperties": false,
       "properties": {
         "name": {
@@ -418,8 +445,8 @@
         "limit": {
           "type": "integer",
           "minimum": 1,
-          "maximum": 100,
-          "default": 20
+          "maximum": 50000,
+          "default": 5000
         }
       },
       "required": [
@@ -482,16 +509,18 @@
           "$ref": "#/$defs/Entity"
         },
         "scope": {
-          "$ref": "#/$defs/Scope"
+          "$ref": "#/$defs/Scope",
+          "description": "WHERE to look: narrows search to a file, directory, class, or namespace. Put file/directory paths here in scope.file, NOT in 'where'."
         },
         "where": {
-          "$ref": "#/$defs/Where"
+          "$ref": "#/$defs/Where",
+          "description": "WHAT to match: filters by symbol properties like name, return_type, access, static, const, etc. Do NOT put file paths here."
         },
         "limit": {
           "type": "integer",
           "minimum": 1,
-          "maximum": 1000,
-          "default": 100
+          "maximum": 50000,
+          "default": 5000
         },
         "cursor": {
           "type": "string"
@@ -501,10 +530,13 @@
           "items": {
             "type": "string",
             "enum": [
+              "symbol_id",
+              "entity",
               "name",
               "qualified_name",
               "signature",
               "return_type",
+              "type",
               "parameters",
               "access",
               "static",
@@ -513,10 +545,18 @@
               "override",
               "deleted",
               "defaulted",
-              "location"
+              "implicit",
+              "location",
+              "source",
+              "extent"
             ]
           },
           "description": "Optional subset of fields to include per result item. Only the requested fields are returned. Include \"symbol_id\" if you need to pass results to cpp_describe_symbol. Omitting this returns all fields. For listing method names use: [\"qualified_name\", \"signature\", \"access\"]. Important: this method listing excludes constructors/destructors; query entity=constructor and entity=destructor separately and merge if you want all member functions. For follow-up describe calls use: [\"symbol_id\", \"qualified_name\", \"signature\", \"access\"]."
+        },
+        "include_source": {
+          "type": "boolean",
+          "default": false,
+          "description": "When true, each result item includes a 'source' field with the full source text and an 'extent' field with start_line/end_line. Opt-in to avoid large responses."
         }
       },
       "required": [
@@ -641,8 +681,13 @@
         "relation_limit": {
           "type": "integer",
           "minimum": 0,
-          "maximum": 100,
-          "default": 20
+          "maximum": 50000,
+          "default": 5000
+        },
+        "include_source": {
+          "type": "boolean",
+          "default": false,
+          "description": "When true, the response item includes a 'source' field with the full source text and an 'extent' field with start_line/end_line."
         }
       },
       "required": [
