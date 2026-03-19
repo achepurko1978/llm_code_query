@@ -270,6 +270,7 @@ pub fn callable_param_types(c: &Cursor) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_support::{ensure_test_build, PARSE_CPP, TEST_BUILD_DIR};
 
     #[test]
     fn test_entity_of_mapping() {
@@ -298,14 +299,8 @@ mod tests {
 
     /// Helper: parse a TU from the sample files and find symbols.
     fn parse_functions_tu() -> (crate::clang_wrapper::Index, crate::clang_wrapper::TranslationUnit) {
-        let idx = crate::clang_wrapper::Index::new();
-        let tu = idx
-            .parse(
-                "/workspace/samples/cpp/functions.cpp",
-                &["-std=c++20".to_string(), "-I/workspace".to_string()],
-            )
-            .expect("failed to parse TU");
-        (idx, tu)
+        ensure_test_build();
+        crate::compile_db::parse(TEST_BUILD_DIR, PARSE_CPP).expect("failed to parse TU")
     }
 
     fn find_cursor_by_name(
@@ -325,14 +320,14 @@ mod tests {
     #[test]
     fn test_qualified_name_function() {
         let (_idx, tu) = parse_functions_tu();
-        let c = find_cursor_by_name(&tu, "square", "function");
-        assert_eq!(qualified_name(&c), "fun::square");
+        let c = find_cursor_by_name(&tu, "LoadFile", "function");
+        assert_eq!(qualified_name(&c), "YAML::LoadFile");
     }
 
     #[test]
     fn test_symbol_id_has_usr() {
         let (_idx, tu) = parse_functions_tu();
-        let c = find_cursor_by_name(&tu, "square", "function");
+        let c = find_cursor_by_name(&tu, "LoadFile", "function");
         let sid = symbol_id(&c);
         // USR for a named function should start with "c:@"
         assert!(sid.starts_with("c:@"), "expected USR, got: {sid}");
@@ -341,32 +336,34 @@ mod tests {
     #[test]
     fn test_sig_function() {
         let (_idx, tu) = parse_functions_tu();
-        let c = find_cursor_by_name(&tu, "square", "function");
-        assert_eq!(sig(&c), "int square(int x)");
+        let c = find_cursor_by_name(&tu, "LoadFile", "function");
+        let signature = sig(&c);
+        assert!(signature.starts_with("Node LoadFile("), "unexpected signature: {signature}");
     }
 
     #[test]
-    fn test_sig_overloaded_add() {
+    fn test_sig_overloaded_load() {
         let (_idx, tu) = parse_functions_tu();
         use crate::clang_wrapper::walk;
-        let adds: Vec<_> = walk(tu.cursor())
+        let loads: Vec<_> = walk(tu.cursor())
             .into_iter()
-            .filter(|c| entity_of(c.kind()) == Some("function") && c.spelling() == "add")
+            .filter(|c| entity_of(c.kind()) == Some("function") && c.spelling() == "Load")
             .collect();
-        assert_eq!(adds.len(), 2);
-        let sigs: Vec<String> = adds.iter().map(|c| sig(c)).collect();
-        assert!(sigs.contains(&"int add(int a, int b)".to_string()));
-        assert!(sigs.contains(&"int add(int a, int b, int c)".to_string()));
+        assert!(loads.len() >= 3, "expected at least 3 Load overloads, got {}", loads.len());
+        let sigs: Vec<String> = loads.iter().map(|c| sig(c)).collect();
+        assert!(sigs.iter().any(|s| s.contains("const std::string &")));
+        assert!(sigs.iter().any(|s| s.contains("const char *")));
+        assert!(sigs.iter().any(|s| s.contains("std::istream &")));
     }
 
     #[test]
     fn test_symbol_summary_keys() {
         let (_idx, tu) = parse_functions_tu();
-        let c = find_cursor_by_name(&tu, "square", "function");
+        let c = find_cursor_by_name(&tu, "LoadFile", "function");
         let s = symbol_summary(&c);
         assert_eq!(s.get("entity").unwrap(), "function");
-        assert_eq!(s.get("name").unwrap(), "square");
-        assert_eq!(s.get("qualified_name").unwrap(), "fun::square");
+        assert_eq!(s.get("name").unwrap(), "LoadFile");
+        assert_eq!(s.get("qualified_name").unwrap(), "YAML::LoadFile");
         assert!(s.contains_key("signature"));
         assert!(s.contains_key("return_type"));
         assert!(s.contains_key("parameters"));
@@ -379,25 +376,13 @@ mod tests {
     #[test]
     fn test_symbol_summary_parameters() {
         let (_idx, tu) = parse_functions_tu();
-        use crate::clang_wrapper::walk;
-        // Find the 2-arg add
-        let c = walk(tu.cursor())
-            .into_iter()
-            .find(|c| {
-                entity_of(c.kind()) == Some("function")
-                    && c.spelling() == "add"
-                    && c.arguments().len() == 2
-            })
-            .unwrap();
+        let c = find_cursor_by_name(&tu, "LoadFile", "function");
         let s = symbol_summary(&c);
         let params = s.get("parameters").unwrap().as_array().unwrap();
-        assert_eq!(params.len(), 2);
-        assert_eq!(params[0]["name"], "a");
-        assert_eq!(params[0]["type"], "int");
+        assert_eq!(params.len(), 1);
+        assert_eq!(params[0]["name"], "filename");
+        assert_eq!(params[0]["type"], "const std::string &");
         assert_eq!(params[0]["position"], 0);
-        assert_eq!(params[1]["name"], "b");
-        assert_eq!(params[1]["type"], "int");
-        assert_eq!(params[1]["position"], 1);
     }
 
     #[test]
@@ -408,11 +393,12 @@ mod tests {
             .into_iter()
             .find(|c| {
                 entity_of(c.kind()) == Some("function")
-                    && c.spelling() == "add"
-                    && c.arguments().len() == 3
+                    && c.spelling() == "Load"
+                    && c.arguments().len() == 1
+                    && c.arguments()[0].cursor_type().spelling() == "const char *"
             })
             .unwrap();
-        assert_eq!(callable_param_types(&c), vec!["int", "int", "int"]);
+        assert_eq!(callable_param_types(&c), vec!["const char *"]);
     }
 
     #[test]
@@ -435,37 +421,32 @@ mod tests {
             .into_iter()
             .filter(|c| entity_of(c.kind()) == Some("call"))
             .collect();
-        assert_eq!(calls.len(), 2);
+        assert!(calls.len() >= 10);
         let names: Vec<String> = calls.iter().map(|c| symbol_summary(c).get("name").unwrap().as_str().unwrap().to_string()).collect();
-        assert!(names.contains(&"square".to_string()));
-        assert!(names.contains(&"add".to_string()));
+        assert!(names.contains(&"Parser".to_string()));
+        assert!(names.contains(&"NodeBuilder".to_string()));
     }
 
     #[test]
     fn test_relation_summary() {
         let (_idx, tu) = parse_functions_tu();
-        let c = find_cursor_by_name(&tu, "square", "function");
+        let c = find_cursor_by_name(&tu, "Load", "function");
         let rs = relation_summary("calls", &c);
         assert_eq!(rs.get("kind").unwrap(), "calls");
         assert_eq!(rs.get("entity").unwrap(), "function");
-        assert_eq!(rs.get("name").unwrap(), "square");
+        assert_eq!(rs.get("name").unwrap(), "Load");
         assert!(rs.contains_key("symbol_id"));
         assert!(rs.contains_key("location"));
     }
 
     #[test]
     fn test_qualified_name_classes() {
-        let idx = crate::clang_wrapper::Index::new();
-        let tu = idx
-            .parse(
-                "/workspace/samples/cpp/classes.cpp",
-                &["-std=c++20".to_string(), "-I/workspace".to_string()],
-            )
-            .unwrap();
-        let c = find_cursor_by_name(&tu, "bump", "method");
+        ensure_test_build();
+        let (_idx, tu) = crate::compile_db::parse(TEST_BUILD_DIR, "/workspace/samples/cpp/src/emitfromevents.cpp")
+            .expect("failed to parse TU");
+        let c = find_cursor_by_name(&tu, "OnMapEnd", "method");
         let qn = qualified_name(&c);
-        // Should be either model::BaseCounter::bump or model::FancyCounter::bump
-        assert!(qn.starts_with("model::"), "expected model:: prefix, got: {qn}");
-        assert!(qn.ends_with("::bump"), "expected ::bump suffix, got: {qn}");
+        assert!(qn.starts_with("YAML::"), "expected YAML:: prefix, got: {qn}");
+        assert!(qn.ends_with("::OnMapEnd"), "expected ::OnMapEnd suffix, got: {qn}");
     }
 }

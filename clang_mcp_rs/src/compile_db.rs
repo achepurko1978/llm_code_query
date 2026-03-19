@@ -142,17 +142,18 @@ pub fn parse(build_dir: &str, src: &str) -> anyhow::Result<(Index, TranslationUn
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_support::{ensure_test_build, PARSE_CPP, PARSER_H, TEST_BUILD_DIR};
 
     #[test]
     fn test_filter_args() {
         // Simulate argument filtering logic
         let args = vec![
             "/usr/bin/clang++", "-g", "-std=c++20",
-            "-o", "out.o", "-c", "/workspace/samples/cpp/functions.cpp",
+            "-o", "out.o", "-c", PARSE_CPP,
         ];
         let paired: HashSet<&str> = ["-o"].into_iter().collect();
         let single: HashSet<&str> = ["-c"].into_iter().collect();
-        let src_norm = norm("/workspace/samples/cpp/functions.cpp");
+        let src_norm = norm(PARSE_CPP);
         let mut srcs = HashSet::new();
         srcs.insert(src_norm);
 
@@ -170,8 +171,8 @@ mod tests {
 
     #[test]
     fn test_compile_args_from_real_db() {
-        // Test against the actual compile_commands.json in /workspace/build
-        let args = compile_args("/workspace/build", "/workspace/samples/cpp/functions.cpp")
+        ensure_test_build();
+        let args = compile_args(TEST_BUILD_DIR, PARSE_CPP)
             .expect("compile_args failed");
         // Should not contain -c, -o, or the source file itself
         for a in &args {
@@ -190,7 +191,8 @@ mod tests {
 
     #[test]
     fn test_parse_real_tu() {
-        let (_, tu) = parse("/workspace/build", "/workspace/samples/cpp/functions.cpp")
+        ensure_test_build();
+        let (_, tu) = parse(TEST_BUILD_DIR, PARSE_CPP)
             .expect("parse failed");
         let cursor = tu.cursor();
         assert!(!cursor.is_null());
@@ -211,8 +213,8 @@ mod tests {
 
     #[test]
     fn test_header_compile_args_returns_flags() {
-        // shapes.h lives in the same directory as functions.cpp / classes.cpp / data.cpp
-        let args = header_compile_args("/workspace/build", "/workspace/samples/cpp/shapes.h")
+        ensure_test_build();
+        let args = header_compile_args(TEST_BUILD_DIR, PARSER_H)
             .expect("header_compile_args failed");
         // Should contain a std flag borrowed from a sibling source file
         assert!(args.iter().any(|a| a.starts_with("-std=")), "expected -std= flag, got {args:?}");
@@ -228,7 +230,7 @@ mod tests {
 
     #[test]
     fn test_header_compile_args_nonexistent_db() {
-        let result = header_compile_args("/nonexistent/build", "/workspace/samples/cpp/shapes.h");
+        let result = header_compile_args("/nonexistent/build", PARSER_H);
         assert!(result.is_err());
     }
 }

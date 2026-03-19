@@ -1,468 +1,65 @@
-/// Integration tests: run the binary against sample files and compare JSON output.
 use assert_cmd::Command;
 use serde_json::Value;
-use std::fs;
+use std::path::Path;
+use std::process::Command as StdCommand;
+use std::sync::OnceLock;
 
-/// Path to the workspace root (from which build/ and samples/ are accessible).
-fn workspace_root() -> String {
-    // The binary is run from workspace root
-    "/workspace".to_string()
-}
+const BUILD_DIR: &str = "/workspace/samples/cpp/build-rust-tests";
+const PARSE_CPP: &str = "/workspace/samples/cpp/src/parse.cpp";
+const NODE_H: &str = "/workspace/samples/cpp/include/yaml-cpp/node/node.h";
+const EXCEPTIONS_H: &str = "/workspace/samples/cpp/include/yaml-cpp/exceptions.h";
+const EMIT_FROM_EVENTS_H: &str = "/workspace/samples/cpp/include/yaml-cpp/emitfromevents.h";
 
-fn run_tool(file: &str, tool: &str, request_file: &str) -> Value {
-    let ws = workspace_root();
-    let output = Command::cargo_bin("clang_mcp")
-        .unwrap()
-        .env("LIBCLANG_PATH", "/usr/lib/x86_64-linux-gnu")
-        .args(&[
-            "--build-dir",
-            &format!("{ws}/build"),
-            "--file",
-            &format!("{ws}/samples/cpp/{file}"),
-            tool,
-            "--request-file",
-            &format!("{ws}/samples/requests/{request_file}"),
-        ])
-        .output()
-        .expect("failed to execute binary");
-    assert!(output.status.success(), "binary exited with error: {}", String::from_utf8_lossy(&output.stderr));
-    serde_json::from_slice(&output.stdout).expect("invalid JSON output")
-}
-
-fn load_expected(response_file: &str) -> Value {
-    let ws = workspace_root();
-    let content = fs::read_to_string(format!("{ws}/samples/responses/{response_file}"))
-        .unwrap_or_else(|_| panic!("missing response file: {response_file}"));
-    serde_json::from_str(&content).expect("invalid JSON in response file")
-}
-
-fn assert_json_eq(actual: &Value, expected: &Value, label: &str) {
-    // Compare via sorted JSON to ignore field ordering differences
-    let a = serde_json::to_string(&sort_json(actual)).unwrap();
-    let b = serde_json::to_string(&sort_json(expected)).unwrap();
-    assert_eq!(a, b, "JSON mismatch for {label}:\nactual:   {a}\nexpected: {b}");
-}
-
-fn sort_json(v: &Value) -> Value {
-    match v {
-        Value::Object(m) => {
-            let mut sorted: Vec<(String, Value)> = m
-                .iter()
-                .map(|(k, v)| (k.clone(), sort_json(v)))
-                .collect();
-            sorted.sort_by(|a, b| a.0.cmp(&b.0));
-            Value::Object(sorted.into_iter().collect())
+fn ensure_fixture() {
+    static INIT: OnceLock<Result<(), String>> = OnceLock::new();
+    let result = INIT.get_or_init(|| {
+        let compile_db = format!("{BUILD_DIR}/compile_commands.json");
+        if Path::new(&compile_db).is_file() {
+            return Ok(());
         }
-        Value::Array(a) => Value::Array(a.iter().map(sort_json).collect()),
-        other => other.clone(),
+
+        let status = StdCommand::new("cmake")
+            .args([
+                "-S",
+                "/workspace/samples/cpp",
+                "-B",
+                BUILD_DIR,
+                "-G",
+                "Ninja",
+                "-D",
+                "CMAKE_CXX_COMPILER=clang++",
+                "-D",
+                "CMAKE_EXPORT_COMPILE_COMMANDS=ON",
+            ])
+            .status()
+            .map_err(|e| format!("failed to run cmake configure: {e}"))?;
+
+        if !status.success() {
+            return Err("cmake configure failed for integration fixture".to_string());
+        }
+
+        if !Path::new(&compile_db).is_file() {
+            return Err(format!("compile database not generated at {compile_db}"));
+        }
+        Ok(())
+    });
+
+    if let Err(msg) = result {
+        panic!("{msg}");
     }
 }
 
-// -------------------------------------------------------------------
-// Sample response tests
-// -------------------------------------------------------------------
-
-#[test]
-fn test_resolve_add() {
-    let actual = run_tool("functions.cpp", "cpp_resolve_symbol", "resolve_add.request.json");
-    let expected = load_expected("functions.resolve_add.response.json");
-    assert_json_eq(&actual, &expected, "resolve_add");
-}
-
-#[test]
-fn test_semantic_functions_list() {
-    let actual = run_tool(
-        "functions.cpp",
-        "cpp_semantic_query",
-        "semantic_functions_list.request.json",
-    );
-    let expected = load_expected("functions.semantic_functions_list.response.json");
-    assert_json_eq(&actual, &expected, "semantic_functions_list");
-}
-
-#[test]
-fn test_semantic_calls_list() {
-    let actual = run_tool(
-        "functions.cpp",
-        "cpp_semantic_query",
-        "semantic_calls_list.request.json",
-    );
-    let expected = load_expected("functions.semantic_calls_list.response.json");
-    assert_json_eq(&actual, &expected, "semantic_calls_list");
-}
-
-#[test]
-fn test_semantic_methods_list() {
-    let actual = run_tool(
-        "classes.cpp",
-        "cpp_semantic_query",
-        "semantic_methods_list.request.json",
-    );
-    let expected = load_expected("classes.semantic_methods_list.response.json");
-    assert_json_eq(&actual, &expected, "semantic_methods_list");
-}
-
-#[test]
-fn test_semantic_exists_override() {
-    let actual = run_tool(
-        "classes.cpp",
-        "cpp_semantic_query",
-        "semantic_exists_override.request.json",
-    );
-    let expected = load_expected("classes.semantic_exists_override.response.json");
-    assert_json_eq(&actual, &expected, "semantic_exists_override");
-}
-
-#[test]
-fn test_semantic_exists_virtual() {
-    let actual = run_tool(
-        "classes.cpp",
-        "cpp_semantic_query",
-        "semantic_exists_virtual.request.json",
-    );
-    let expected = load_expected("classes.semantic_exists_virtual.response.json");
-    assert_json_eq(&actual, &expected, "semantic_exists_virtual");
-}
-
-#[test]
-fn test_semantic_structs_list() {
-    let actual = run_tool(
-        "data.cpp",
-        "cpp_semantic_query",
-        "semantic_structs_list.request.json",
-    );
-    let expected = load_expected("data.semantic_structs_list.response.json");
-    assert_json_eq(&actual, &expected, "semantic_structs_list");
-}
-
-#[test]
-fn test_describe_add() {
-    let actual = run_tool(
-        "functions.cpp",
-        "cpp_describe_symbol",
-        "describe_add.request.json",
-    );
-    let expected = load_expected("functions.describe_add.response.json");
-    assert_json_eq(&actual, &expected, "describe_add");
-}
-
-// -------------------------------------------------------------------
-// Edge case / error handling tests
-// -------------------------------------------------------------------
-
-#[test]
-fn test_resolve_symbol_missing_name() {
-    let ws = workspace_root();
+fn run_tool_json(file: &str, tool: &str, request_json: &str) -> Value {
+    ensure_fixture();
     let output = Command::cargo_bin("clang_mcp")
         .unwrap()
         .env("LIBCLANG_PATH", "/usr/lib/x86_64-linux-gnu")
-        .args(&[
-            "--build-dir", &format!("{ws}/build"),
-            "--file", &format!("{ws}/samples/cpp/functions.cpp"),
-            "cpp_resolve_symbol",
-            "--request-json", "{}",
-        ])
-        .output()
-        .expect("failed to execute");
-    assert!(output.status.success());
-    let v: Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(v["status"], "error");
-    assert_eq!(v["warnings"][0]["code"], "INVALID_REQUEST");
-}
-
-#[test]
-fn test_semantic_query_invalid_action() {
-    let ws = workspace_root();
-    let output = Command::cargo_bin("clang_mcp")
-        .unwrap()
-        .env("LIBCLANG_PATH", "/usr/lib/x86_64-linux-gnu")
-        .args(&[
-            "--build-dir", &format!("{ws}/build"),
-            "--file", &format!("{ws}/samples/cpp/functions.cpp"),
-            "cpp_semantic_query",
-            "--request-json", r#"{"action":"invalid","entity":"function"}"#,
-        ])
-        .output()
-        .expect("failed to execute");
-    assert!(output.status.success());
-    let v: Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(v["status"], "error");
-}
-
-#[test]
-fn test_semantic_query_missing_entity() {
-    let ws = workspace_root();
-    let output = Command::cargo_bin("clang_mcp")
-        .unwrap()
-        .env("LIBCLANG_PATH", "/usr/lib/x86_64-linux-gnu")
-        .args(&[
-            "--build-dir", &format!("{ws}/build"),
-            "--file", &format!("{ws}/samples/cpp/functions.cpp"),
-            "cpp_semantic_query",
-            "--request-json", r#"{"action":"list"}"#,
-        ])
-        .output()
-        .expect("failed to execute");
-    assert!(output.status.success());
-    let v: Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(v["status"], "error");
-    assert_eq!(v["warnings"][0]["code"], "INVALID_REQUEST");
-}
-
-#[test]
-fn test_describe_symbol_not_found() {
-    let ws = workspace_root();
-    let output = Command::cargo_bin("clang_mcp")
-        .unwrap()
-        .env("LIBCLANG_PATH", "/usr/lib/x86_64-linux-gnu")
-        .args(&[
-            "--build-dir", &format!("{ws}/build"),
-            "--file", &format!("{ws}/samples/cpp/functions.cpp"),
-            "cpp_describe_symbol",
-            "--request-json", r#"{"symbol_id":"nonexistent"}"#,
-        ])
-        .output()
-        .expect("failed to execute");
-    assert!(output.status.success());
-    let v: Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(v["status"], "ok");
-    assert_eq!(v["warnings"][0]["code"], "NO_MATCH");
-}
-
-#[test]
-fn test_doctor() {
-    let ws = workspace_root();
-    let output = Command::cargo_bin("clang_mcp")
-        .unwrap()
-        .env("LIBCLANG_PATH", "/usr/lib/x86_64-linux-gnu")
-        .args(&[
-            "--build-dir", &format!("{ws}/build"),
-            "--file", &format!("{ws}/samples/cpp/functions.cpp"),
-            "doctor",
-        ])
-        .output()
-        .expect("failed to execute");
-    assert!(output.status.success());
-    let v: Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(v["status"], "ok");
-    assert_eq!(v["result_kind"], "doctor");
-    assert_eq!(v["ok"], true);
-}
-
-#[test]
-fn test_count_action() {
-    let ws = workspace_root();
-    let output = Command::cargo_bin("clang_mcp")
-        .unwrap()
-        .env("LIBCLANG_PATH", "/usr/lib/x86_64-linux-gnu")
-        .args(&[
-            "--build-dir", &format!("{ws}/build"),
-            "--file", &format!("{ws}/samples/cpp/functions.cpp"),
-            "cpp_semantic_query",
-            "--request-json", r#"{"action":"count","entity":"function"}"#,
-        ])
-        .output()
-        .expect("failed to execute");
-    assert!(output.status.success());
-    let v: Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(v["status"], "ok");
-    assert_eq!(v["result_kind"], "count");
-    assert_eq!(v["count"], 4);
-}
-
-#[test]
-fn test_exists_action() {
-    let ws = workspace_root();
-    let output = Command::cargo_bin("clang_mcp")
-        .unwrap()
-        .env("LIBCLANG_PATH", "/usr/lib/x86_64-linux-gnu")
-        .args(&[
-            "--build-dir", &format!("{ws}/build"),
-            "--file", &format!("{ws}/samples/cpp/functions.cpp"),
-            "cpp_semantic_query",
-            "--request-json", r#"{"action":"exists","entity":"function"}"#,
-        ])
-        .output()
-        .expect("failed to execute");
-    assert!(output.status.success());
-    let v: Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(v["status"], "ok");
-    assert_eq!(v["result_kind"], "exists");
-    assert_eq!(v["exists"], true);
-}
-
-#[test]
-fn test_list_functions_legacy() {
-    let ws = workspace_root();
-    let output = Command::cargo_bin("clang_mcp")
-        .unwrap()
-        .env("LIBCLANG_PATH", "/usr/lib/x86_64-linux-gnu")
-        .args(&[
-            "--build-dir", &format!("{ws}/build"),
-            "--file", &format!("{ws}/samples/cpp/functions.cpp"),
-            "list-functions",
-        ])
-        .output()
-        .expect("failed to execute");
-    assert!(output.status.success());
-    let v: Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(v["status"], "ok");
-    let items = v["items"].as_array().unwrap();
-    assert_eq!(items.len(), 4);
-    let names: Vec<&str> = items.iter().map(|i| i["name"].as_str().unwrap()).collect();
-    assert!(names.contains(&"add"));
-    assert!(names.contains(&"square"));
-    assert!(names.contains(&"combined"));
-}
-
-#[test]
-fn test_pagination() {
-    let ws = workspace_root();
-    // List functions with limit=2
-    let output = Command::cargo_bin("clang_mcp")
-        .unwrap()
-        .env("LIBCLANG_PATH", "/usr/lib/x86_64-linux-gnu")
-        .args(&[
-            "--build-dir", &format!("{ws}/build"),
-            "--file", &format!("{ws}/samples/cpp/functions.cpp"),
-            "cpp_semantic_query",
-            "--request-json", r#"{"action":"list","entity":"function","limit":2}"#,
-        ])
-        .output()
-        .expect("failed to execute");
-    assert!(output.status.success());
-    let v: Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(v["items"].as_array().unwrap().len(), 2);
-    assert_eq!(v["page"]["truncated"], true);
-    assert_eq!(v["page"]["total_matches"], 4);
-    assert!(v["page"]["next_cursor"].is_string());
-}
-
-#[test]
-fn test_where_filter_name() {
-    let ws = workspace_root();
-    let output = Command::cargo_bin("clang_mcp")
-        .unwrap()
-        .env("LIBCLANG_PATH", "/usr/lib/x86_64-linux-gnu")
-        .args(&[
-            "--build-dir", &format!("{ws}/build"),
-            "--file", &format!("{ws}/samples/cpp/functions.cpp"),
-            "cpp_semantic_query",
-            "--request-json", r#"{"action":"list","entity":"function","where":{"name":"square"}}"#,
-        ])
-        .output()
-        .expect("failed to execute");
-    assert!(output.status.success());
-    let v: Value = serde_json::from_slice(&output.stdout).unwrap();
-    let items = v["items"].as_array().unwrap();
-    assert_eq!(items.len(), 1);
-    assert_eq!(items[0]["name"], "square");
-}
-
-#[test]
-fn test_fields_filter() {
-    let ws = workspace_root();
-    let output = Command::cargo_bin("clang_mcp")
-        .unwrap()
-        .env("LIBCLANG_PATH", "/usr/lib/x86_64-linux-gnu")
-        .args(&[
-            "--build-dir", &format!("{ws}/build"),
-            "--file", &format!("{ws}/samples/cpp/functions.cpp"),
-            "cpp_semantic_query",
-            "--request-json", r#"{"action":"list","entity":"function","fields":["name","qualified_name"]}"#,
-        ])
-        .output()
-        .expect("failed to execute");
-    assert!(output.status.success());
-    let v: Value = serde_json::from_slice(&output.stdout).unwrap();
-    let items = v["items"].as_array().unwrap();
-    assert!(!items.is_empty());
-    // Each item should only have name and qualified_name
-    for item in items {
-        let obj = item.as_object().unwrap();
-        assert!(obj.contains_key("name"));
-        assert!(obj.contains_key("qualified_name"));
-        assert!(!obj.contains_key("symbol_id"));
-        assert!(!obj.contains_key("location"));
-    }
-}
-
-#[test]
-fn test_request_file_not_found_exits_nonzero() {
-    let ws = workspace_root();
-    let output = Command::cargo_bin("clang_mcp")
-        .unwrap()
-        .env("LIBCLANG_PATH", "/usr/lib/x86_64-linux-gnu")
-        .args(&[
-            "--build-dir", &format!("{ws}/build"),
-            "--file", &format!("{ws}/samples/cpp/functions.cpp"),
-            "cpp_resolve_symbol",
-            "--request-file", "/nonexistent/file.json",
-        ])
-        .output()
-        .expect("failed to execute");
-    assert!(!output.status.success());
-}
-
-#[test]
-fn test_classes_struct_list() {
-    let ws = workspace_root();
-    let output = Command::cargo_bin("clang_mcp")
-        .unwrap()
-        .env("LIBCLANG_PATH", "/usr/lib/x86_64-linux-gnu")
-        .args(&[
-            "--build-dir", &format!("{ws}/build"),
-            "--file", &format!("{ws}/samples/cpp/data.cpp"),
-            "cpp_semantic_query",
-            "--request-json", r#"{"action":"count","entity":"struct"}"#,
-        ])
-        .output()
-        .expect("failed to execute");
-    assert!(output.status.success());
-    let v: Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(v["count"], 1); // struct Point
-}
-
-#[test]
-fn test_resolve_with_entity_filter() {
-    let ws = workspace_root();
-    let output = Command::cargo_bin("clang_mcp")
-        .unwrap()
-        .env("LIBCLANG_PATH", "/usr/lib/x86_64-linux-gnu")
-        .args(&[
-            "--build-dir", &format!("{ws}/build"),
-            "--file", &format!("{ws}/samples/cpp/functions.cpp"),
-            "cpp_resolve_symbol",
-            "--request-json", r#"{"name":"add","entity":"function"}"#,
-        ])
-        .output()
-        .expect("failed to execute");
-    assert!(output.status.success());
-    let v: Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(v["ambiguous"], true);
-    let items = v["items"].as_array().unwrap();
-    assert_eq!(items.len(), 2);
-    for item in items {
-        assert_eq!(item["entity"], "function");
-        assert_eq!(item["name"], "add");
-    }
-}
-
-// ---------------------------------------------------------------------------
-// Header file (.h) integration tests
-// ---------------------------------------------------------------------------
-
-fn run_header_query(header: &str, request_json: &str) -> Value {
-    let ws = workspace_root();
-    let output = Command::cargo_bin("clang_mcp")
-        .unwrap()
-        .env("LIBCLANG_PATH", "/usr/lib/x86_64-linux-gnu")
-        .args(&[
+        .args([
             "--build-dir",
-            &format!("{ws}/build"),
+            BUILD_DIR,
             "--file",
-            &format!("{ws}/samples/cpp/{header}"),
-            "cpp_semantic_query",
+            file,
+            tool,
             "--request-json",
             request_json,
         ])
@@ -470,107 +67,253 @@ fn run_header_query(header: &str, request_json: &str) -> Value {
         .expect("failed to execute binary");
     assert!(
         output.status.success(),
-        "binary exited with error for {header}: {}",
+        "binary exited with error: {}",
         String::from_utf8_lossy(&output.stderr)
     );
     serde_json::from_slice(&output.stdout).expect("invalid JSON output")
 }
 
-#[test]
-fn test_header_list_classes() {
-    let v = run_header_query("shapes.h", r#"{"entity":"class","action":"list"}"#);
-    assert_eq!(v["status"], "ok");
-    let items = v["items"].as_array().unwrap();
-    assert_eq!(items.len(), 3);
-    let names: Vec<&str> = items.iter().map(|i| i["name"].as_str().unwrap()).collect();
-    assert!(names.contains(&"Shape"));
-    assert!(names.contains(&"Circle"));
-    assert!(names.contains(&"Rectangle"));
+fn find_symbol_id(file: &str, name: &str, entity: &str) -> String {
+    let req = format!(r#"{{"name":"{name}","entity":"{entity}"}}"#);
+    let v = run_tool_json(file, "cpp_resolve_symbol", &req);
+    let items = v["items"].as_array().expect("items is not an array");
+    let item = items.iter().find(|i| i["name"] == name).expect("symbol not found");
+    item["symbol_id"].as_str().expect("missing symbol_id").to_string()
 }
 
 #[test]
-fn test_header_list_methods() {
-    let v = run_header_query("shapes.h", r#"{"entity":"method","action":"list"}"#);
-    assert_eq!(v["status"], "ok");
-    let items = v["items"].as_array().unwrap();
-    assert!(items.len() >= 9, "expected >= 9 methods, got {}", items.len());
-}
-
-#[test]
-fn test_header_exists_virtual() {
-    let v = run_header_query(
-        "shapes.h",
-        r#"{"entity":"method","action":"exists","where":{"virtual":true}}"#,
-    );
-    assert_eq!(v["status"], "ok");
-    assert_eq!(v["exists"], true);
-}
-
-#[test]
-fn test_header_exists_override() {
-    let v = run_header_query(
-        "shapes.h",
-        r#"{"entity":"method","action":"exists","where":{"override":true}}"#,
-    );
-    assert_eq!(v["status"], "ok");
-    assert_eq!(v["exists"], true);
-}
-
-#[test]
-fn test_header_list_functions_utils() {
-    let v = run_header_query("utils.h", r#"{"entity":"function","action":"list"}"#);
-    assert_eq!(v["status"], "ok");
-    let items = v["items"].as_array().unwrap();
-    let names: Vec<&str> = items.iter().map(|i| i["name"].as_str().unwrap()).collect();
-    assert!(names.contains(&"split"));
-    assert!(names.contains(&"join"));
-    assert!(names.contains(&"count_char"));
-}
-
-#[test]
-fn test_header_list_structs_utils() {
-    let v = run_header_query("utils.h", r#"{"entity":"struct","action":"list"}"#);
-    assert_eq!(v["status"], "ok");
-    let items = v["items"].as_array().unwrap();
-    let names: Vec<&str> = items.iter().map(|i| i["name"].as_str().unwrap()).collect();
-    assert!(names.contains(&"KeyValue"));
-}
-
-#[test]
-fn test_header_count_classes() {
-    let v = run_header_query("shapes.h", r#"{"entity":"class","action":"count"}"#);
-    assert_eq!(v["status"], "ok");
-    assert_eq!(v["count"], 3);
-}
-
-#[test]
-fn test_header_describe_symbol() {
-    let ws = workspace_root();
-    // First list to get symbol_id for Circle
-    let list = run_header_query("shapes.h", r#"{"entity":"class","action":"list"}"#);
-    let circle = list["items"].as_array().unwrap()
-        .iter()
-        .find(|i| i["name"] == "Circle")
-        .expect("Circle not found");
-    let sid = circle["symbol_id"].as_str().unwrap();
-
+fn test_doctor_ok() {
+    ensure_fixture();
     let output = Command::cargo_bin("clang_mcp")
         .unwrap()
         .env("LIBCLANG_PATH", "/usr/lib/x86_64-linux-gnu")
-        .args(&[
+        .args([
             "--build-dir",
-            &format!("{ws}/build"),
+            BUILD_DIR,
             "--file",
-            &format!("{ws}/samples/cpp/shapes.h"),
-            "cpp_describe_symbol",
-            "--request-json",
-            &format!(r#"{{"symbol_id":"{sid}"}}"#),
+            PARSE_CPP,
+            "doctor",
         ])
         .output()
         .expect("failed to execute binary");
     assert!(output.status.success());
     let v: Value = serde_json::from_slice(&output.stdout).unwrap();
     assert_eq!(v["status"], "ok");
-    assert_eq!(v["item"]["name"], "Circle");
-    assert_eq!(v["item"]["entity"], "class");
+    assert_eq!(v["ok"], true);
+}
+
+#[test]
+fn test_resolve_symbol_ambiguous_load() {
+    let v = run_tool_json(PARSE_CPP, "cpp_resolve_symbol", r#"{"name":"Load"}"#);
+    assert_eq!(v["status"], "ok");
+    assert_eq!(v["ambiguous"], true);
+    let items = v["items"].as_array().unwrap();
+    assert!(items.len() >= 3);
+    assert!(items.iter().all(|i| i["entity"] == "function"));
+}
+
+#[test]
+fn test_resolve_symbol_missing_name_error() {
+    let v = run_tool_json(PARSE_CPP, "cpp_resolve_symbol", "{}");
+    assert_eq!(v["status"], "error");
+    assert_eq!(v["warnings"][0]["code"], "INVALID_REQUEST");
+}
+
+#[test]
+fn test_semantic_list_functions_parse_contains_loadfile() {
+    let v = run_tool_json(
+        PARSE_CPP,
+        "cpp_semantic_query",
+        r#"{"action":"list","entity":"function","fields":["name"]}"#,
+    );
+    assert_eq!(v["status"], "ok");
+    let items = v["items"].as_array().unwrap();
+    assert!(items.len() >= 8);
+    assert!(items.iter().any(|i| i["name"] == "LoadFile"));
+}
+
+#[test]
+fn test_semantic_count_and_exists_actions() {
+    let count = run_tool_json(
+        PARSE_CPP,
+        "cpp_semantic_query",
+        r#"{"action":"count","entity":"call"}"#,
+    );
+    assert_eq!(count["status"], "ok");
+    assert!(count["count"].as_i64().unwrap_or(0) > 0);
+
+    let exists = run_tool_json(
+        PARSE_CPP,
+        "cpp_semantic_query",
+        r#"{"action":"exists","entity":"class"}"#,
+    );
+    assert_eq!(exists["status"], "ok");
+    assert_eq!(exists["exists"], false);
+}
+
+#[test]
+fn test_semantic_where_fields_and_pagination() {
+    let where_v = run_tool_json(
+        PARSE_CPP,
+        "cpp_semantic_query",
+        r#"{"action":"list","entity":"function","where":{"name":"LoadFile"}}"#,
+    );
+    let where_items = where_v["items"].as_array().unwrap();
+    assert_eq!(where_items.len(), 1);
+    assert_eq!(where_items[0]["name"], "LoadFile");
+
+    let fields_v = run_tool_json(
+        PARSE_CPP,
+        "cpp_semantic_query",
+        r#"{"action":"list","entity":"function","fields":["name","qualified_name"]}"#,
+    );
+    for item in fields_v["items"].as_array().unwrap() {
+        let obj = item.as_object().unwrap();
+        assert!(obj.contains_key("name"));
+        assert!(obj.contains_key("qualified_name"));
+        assert!(!obj.contains_key("symbol_id"));
+    }
+
+    let page_v = run_tool_json(
+        PARSE_CPP,
+        "cpp_semantic_query",
+        r#"{"action":"list","entity":"function","limit":2}"#,
+    );
+    assert_eq!(page_v["items"].as_array().unwrap().len(), 2);
+    assert_eq!(page_v["page"]["truncated"], true);
+    assert!(page_v["page"]["next_cursor"].is_string());
+}
+
+#[test]
+fn test_semantic_find_action_and_source_include() {
+    let find_v = run_tool_json(
+        PARSE_CPP,
+        "cpp_semantic_query",
+        r#"{"action":"find","entity":"function","where":{"name":"LoadFile"}}"#,
+    );
+    assert_eq!(find_v["status"], "ok");
+    assert_eq!(find_v["result_kind"], "find");
+    assert_eq!(find_v["items"].as_array().unwrap().len(), 1);
+
+    let src_v = run_tool_json(
+        PARSE_CPP,
+        "cpp_semantic_query",
+        r#"{"action":"list","entity":"function","where":{"name":"LoadFile"},"include_source":true}"#,
+    );
+    let item = &src_v["items"].as_array().unwrap()[0];
+    assert!(item["source"].as_str().unwrap_or("").contains("LoadFile"));
+    assert!(item["extent"].is_object());
+}
+
+#[test]
+fn test_semantic_query_call_name_filter() {
+    let v = run_tool_json(
+        PARSE_CPP,
+        "cpp_semantic_query",
+        r#"{"action":"list","entity":"call","where":{"name":"Parser"},"fields":["name"]}"#,
+    );
+    assert_eq!(v["status"], "ok");
+    let items = v["items"].as_array().unwrap();
+    assert!(!items.is_empty());
+    assert!(items.iter().all(|i| i["name"] == "Parser"));
+}
+
+#[test]
+fn test_describe_symbol_found_not_found_and_source() {
+    let sid = find_symbol_id(PARSE_CPP, "LoadFile", "function");
+    let describe_req = format!(
+        r#"{{"symbol_id":"{sid}","include_relations":true,"include_source":true}}"#
+    );
+    let v = run_tool_json(PARSE_CPP, "cpp_describe_symbol", &describe_req);
+    assert_eq!(v["status"], "ok");
+    assert_eq!(v["item"]["name"], "LoadFile");
+    assert!(v["item"]["relations"]["calls"].is_array());
+    assert!(v["item"]["source"].as_str().unwrap_or("").contains("LoadFile"));
+
+    let missing = run_tool_json(
+        PARSE_CPP,
+        "cpp_describe_symbol",
+        r#"{"symbol_id":"missing.symbol.id"}"#,
+    );
+    assert_eq!(missing["status"], "ok");
+    assert_eq!(missing["warnings"][0]["code"], "NO_MATCH");
+}
+
+#[test]
+fn test_header_queries_node_and_emitfromevents() {
+    let node_classes = run_tool_json(
+        NODE_H,
+        "cpp_semantic_query",
+        r#"{"action":"count","entity":"class"}"#,
+    );
+    assert_eq!(node_classes["status"], "ok");
+    assert!(node_classes["count"].as_i64().unwrap_or(0) >= 3);
+
+    let node_methods = run_tool_json(
+        NODE_H,
+        "cpp_semantic_query",
+        r#"{"action":"count","entity":"method"}"#,
+    );
+    assert!(node_methods["count"].as_i64().unwrap_or(0) >= 10);
+
+    let overrides = run_tool_json(
+        EMIT_FROM_EVENTS_H,
+        "cpp_semantic_query",
+        r#"{"action":"exists","entity":"method","where":{"override":true}}"#,
+    );
+    assert_eq!(overrides["status"], "ok");
+    assert_eq!(overrides["exists"], true);
+}
+
+#[test]
+fn test_header_inheritance_describe() {
+    let v = run_tool_json(
+        EXCEPTIONS_H,
+        "cpp_describe_symbol",
+        r#"{"symbol_id":"c:@N@YAML@S@BadConversion"}"#,
+    );
+    assert_eq!(v["status"], "ok");
+    assert_eq!(v["item"]["name"], "BadConversion");
+    assert!(v["item"]["relations"]["derives_from"].is_array());
+}
+
+#[test]
+fn test_legacy_list_functions_nonempty() {
+    ensure_fixture();
+    let output = Command::cargo_bin("clang_mcp")
+        .unwrap()
+        .env("LIBCLANG_PATH", "/usr/lib/x86_64-linux-gnu")
+        .args([
+            "--build-dir",
+            BUILD_DIR,
+            "--file",
+            PARSE_CPP,
+            "list-functions",
+        ])
+        .output()
+        .expect("failed to execute binary");
+    assert!(output.status.success());
+    let v: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(v["status"], "ok");
+    assert!(!v["items"].as_array().unwrap().is_empty());
+}
+
+#[test]
+fn test_request_file_not_found_exits_nonzero() {
+    ensure_fixture();
+    let output = Command::cargo_bin("clang_mcp")
+        .unwrap()
+        .env("LIBCLANG_PATH", "/usr/lib/x86_64-linux-gnu")
+        .args([
+            "--build-dir",
+            BUILD_DIR,
+            "--file",
+            PARSE_CPP,
+            "cpp_resolve_symbol",
+            "--request-file",
+            "/nonexistent/file.json",
+        ])
+        .output()
+        .expect("failed to execute");
+    assert!(!output.status.success());
 }

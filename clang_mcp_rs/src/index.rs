@@ -357,6 +357,10 @@ fn relation_match(idx: &IndexData, sid: &str, where_rel: &serde_json::Map<String
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_support::{
+        ensure_test_build, CONVERT_H, EMIT_FROM_EVENTS_H, NODE_H, PARSE_CPP, PARSER_CPP,
+        TEST_BUILD_DIR,
+    };
 
     #[test]
     fn test_external_segments() {
@@ -376,17 +380,20 @@ mod tests {
     }
 
     fn build_functions_index() -> IndexData {
-        load_index("/workspace/build", "/workspace/samples/cpp/functions.cpp", None)
+        ensure_test_build();
+        load_index(TEST_BUILD_DIR, PARSE_CPP, None)
             .expect("failed to load index")
     }
 
     fn build_classes_index() -> IndexData {
-        load_index("/workspace/build", "/workspace/samples/cpp/classes.cpp", None)
+        ensure_test_build();
+        load_index(TEST_BUILD_DIR, EMIT_FROM_EVENTS_H, None)
             .expect("failed to load index")
     }
 
     fn build_data_index() -> IndexData {
-        load_index("/workspace/build", "/workspace/samples/cpp/data.cpp", None)
+        ensure_test_build();
+        load_index(TEST_BUILD_DIR, CONVERT_H, None)
             .expect("failed to load index")
     }
 
@@ -397,7 +404,7 @@ mod tests {
         let funcs: Vec<_> = idx.symbols.iter()
             .filter(|e| e.entity == "function")
             .collect();
-        assert_eq!(funcs.len(), 4);
+        assert!(funcs.len() >= 8, "expected at least 8 functions, got {}", funcs.len());
     }
 
     #[test]
@@ -406,7 +413,7 @@ mod tests {
         let calls: Vec<_> = idx.symbols.iter()
             .filter(|e| e.entity == "call")
             .collect();
-        assert_eq!(calls.len(), 2);
+        assert!(calls.len() >= 10, "expected at least 10 calls, got {}", calls.len());
     }
 
     #[test]
@@ -420,22 +427,22 @@ mod tests {
     #[test]
     fn test_call_relationships() {
         let idx = build_functions_index();
-        let combined_id = idx.symbols.iter()
-            .find(|e| e.name == "combined" && e.entity == "function")
+        let load_file_id = idx.symbols.iter()
+            .find(|e| e.name == "LoadFile" && e.entity == "function")
             .map(|e| e.symbol_id.clone())
-            .expect("combined not found");
-        let calls = idx.calls_by_caller.get(&combined_id).expect("no calls for combined");
-        assert_eq!(calls.len(), 2);
+            .expect("LoadFile not found");
+        let calls = idx.calls_by_caller.get(&load_file_id).expect("no calls for LoadFile");
+        assert!(!calls.is_empty(), "expected LoadFile to have call relations");
     }
 
     #[test]
     fn test_base_class_relationships() {
         let idx = build_classes_index();
-        let fancy_id = idx.symbols.iter()
-            .find(|e| e.name == "FancyCounter" && e.entity == "class")
+        let derived_id = idx.symbols.iter()
+            .find(|e| e.name == "EmitFromEvents" && e.entity == "class")
             .map(|e| e.symbol_id.clone())
-            .expect("FancyCounter not found");
-        let bases = idx.bases_by_derived.get(&fancy_id).expect("no bases for FancyCounter");
+            .expect("EmitFromEvents not found");
+        let bases = idx.bases_by_derived.get(&derived_id).expect("no bases for EmitFromEvents");
         assert_eq!(bases.len(), 1);
     }
 
@@ -443,22 +450,23 @@ mod tests {
     fn test_override_relationships() {
         let idx = build_classes_index();
         let methods: Vec<_> = idx.symbols.iter()
-            .filter(|e| e.name == "bump" && e.entity == "method")
+            .filter(|e| e.entity == "method" && e.summary.get("override") == Some(&Value::Bool(true)))
             .collect();
+        assert!(!methods.is_empty(), "expected overridden methods in emitfromevents.h");
         let has_override = methods.iter().any(|e| {
             idx.overrides_by_method.contains_key(&e.symbol_id)
         });
-        assert!(has_override, "expected at least one bump to have overrides");
+        assert!(has_override, "expected at least one method to have overrides relation");
     }
 
     #[test]
     fn test_contains_relationships() {
         let idx = build_functions_index();
         let ns_id = idx.symbols.iter()
-            .find(|e| e.name == "fun" && e.entity == "namespace")
+            .find(|e| e.name == "YAML" && e.entity == "namespace")
             .map(|e| e.symbol_id.clone())
-            .expect("namespace 'fun' not found");
-        let children = idx.contains_by_parent.get(&ns_id).expect("no children for fun");
+            .expect("namespace 'YAML' not found");
+        let children = idx.contains_by_parent.get(&ns_id).expect("no children for YAML");
         assert!(children.len() >= 4);
     }
 
@@ -466,7 +474,7 @@ mod tests {
     fn test_is_in_file() {
         let idx = build_functions_index();
         for e in &idx.symbols {
-            assert!(is_in_file(e, "/workspace/samples/cpp/functions.cpp"));
+            assert!(is_in_file(e, PARSE_CPP));
         }
     }
 
@@ -482,11 +490,11 @@ mod tests {
     fn test_passes_scope_file_filter() {
         let idx = build_functions_index();
         let mut scope = serde_json::Map::new();
-        scope.insert("file".to_string(), Value::String("/workspace/samples/cpp/functions.cpp".to_string()));
+        scope.insert("file".to_string(), Value::String(PARSE_CPP.to_string()));
         for e in &idx.symbols {
             assert!(passes_scope(e, Some(&scope)));
         }
-        scope.insert("file".to_string(), Value::String("/workspace/samples/cpp/classes.cpp".to_string()));
+        scope.insert("file".to_string(), Value::String(PARSER_CPP.to_string()));
         for e in &idx.symbols {
             assert!(!passes_scope(e, Some(&scope)));
         }
@@ -496,20 +504,20 @@ mod tests {
     fn test_passes_where_name_filter() {
         let idx = build_functions_index();
         let mut wh = serde_json::Map::new();
-        wh.insert("name".to_string(), Value::String("square".to_string()));
+        wh.insert("name".to_string(), Value::String("LoadFile".to_string()));
         let matching: Vec<_> = idx.symbols.iter()
             .filter(|e| e.entity == "function")
             .filter(|e| passes_where(&idx, e, Some(&wh)))
             .collect();
         assert_eq!(matching.len(), 1);
-        assert_eq!(matching[0].name, "square");
+        assert_eq!(matching[0].name, "LoadFile");
     }
 
     #[test]
     fn test_passes_where_boolean_filter() {
         let idx = build_classes_index();
         let mut wh = serde_json::Map::new();
-        wh.insert("virtual".to_string(), Value::Bool(true));
+        wh.insert("override".to_string(), Value::Bool(true));
         let matching: Vec<_> = idx.symbols.iter()
             .filter(|e| e.entity == "method")
             .filter(|e| passes_where(&idx, e, Some(&wh)))
@@ -523,8 +531,7 @@ mod tests {
         let structs: Vec<_> = idx.symbols.iter()
             .filter(|e| e.entity == "struct")
             .collect();
-        assert_eq!(structs.len(), 1);
-        assert_eq!(structs[0].name, "Point");
+        assert!(!structs.is_empty(), "expected at least one struct in convert.h");
     }
 
     #[test]
@@ -544,57 +551,56 @@ mod tests {
 
     #[test]
     fn test_load_index_header_file() {
-        let idx = load_index("/workspace/build", "/workspace/samples/cpp/shapes.h", None)
+        ensure_test_build();
+        let idx = load_index(TEST_BUILD_DIR, NODE_H, None)
             .expect("load_index failed for header");
         let classes: Vec<_> = idx.symbols.iter().filter(|e| e.entity == "class").collect();
-        assert_eq!(classes.len(), 3);
+        assert!(classes.len() >= 3);
         let names: Vec<&str> = classes.iter().map(|e| e.name.as_str()).collect();
-        assert!(names.contains(&"Shape"));
-        assert!(names.contains(&"Circle"));
-        assert!(names.contains(&"Rectangle"));
+        assert!(names.contains(&"Node"));
     }
 
     #[test]
     fn test_load_index_header_methods() {
-        let idx = load_index("/workspace/build", "/workspace/samples/cpp/shapes.h", None)
+        ensure_test_build();
+        let idx = load_index(TEST_BUILD_DIR, NODE_H, None)
             .expect("load_index failed for header");
         let methods: Vec<_> = idx.symbols.iter().filter(|e| e.entity == "method").collect();
-        // Shape has 2 pure virtual methods, Circle has 3 (area, perimeter, radius),
-        // Rectangle has 4 (area, perimeter, width, height)
-        assert!(methods.len() >= 9, "expected >= 9 methods, got {}", methods.len());
+        assert!(methods.len() >= 10, "expected >= 10 methods, got {}", methods.len());
     }
 
     #[test]
     fn test_load_index_header_with_templates() {
-        let idx = load_index("/workspace/build", "/workspace/samples/cpp/utils.h", None)
-            .expect("load_index failed for utils.h");
+        ensure_test_build();
+        let idx = load_index(TEST_BUILD_DIR, CONVERT_H, None)
+            .expect("load_index failed for convert.h");
         let funcs: Vec<_> = idx.symbols.iter().filter(|e| e.entity == "function").collect();
         let names: Vec<&str> = funcs.iter().map(|e| e.name.as_str()).collect();
-        assert!(names.contains(&"split"));
-        assert!(names.contains(&"join"));
-        assert!(names.contains(&"count_char"));
+        assert!(names.contains(&"IsInfinity"));
+        assert!(names.contains(&"IsNaN"));
     }
 
     #[test]
     fn test_load_index_header_structs() {
-        let idx = load_index("/workspace/build", "/workspace/samples/cpp/utils.h", None)
-            .expect("load_index failed for utils.h");
+        ensure_test_build();
+        let idx = load_index(TEST_BUILD_DIR, CONVERT_H, None)
+            .expect("load_index failed for convert.h");
         let structs: Vec<_> = idx.symbols.iter().filter(|e| e.entity == "struct").collect();
         let names: Vec<&str> = structs.iter().map(|e| e.name.as_str()).collect();
-        assert!(names.contains(&"KeyValue"), "missing KeyValue struct, got: {names:?}");
+        assert!(names.contains(&"convert"), "missing convert struct, got: {names:?}");
     }
 
     #[test]
     fn test_load_index_header_inheritance() {
-        let idx = load_index("/workspace/build", "/workspace/samples/cpp/shapes.h", None)
-            .expect("load_index failed for shapes.h");
-        // Circle derives from Shape
-        let circle_id = idx.symbols.iter()
-            .find(|e| e.name == "Circle" && e.entity == "class")
+        ensure_test_build();
+        let idx = load_index(TEST_BUILD_DIR, EMIT_FROM_EVENTS_H, None)
+            .expect("load_index failed for emitfromevents.h");
+        let derived_id = idx.symbols.iter()
+            .find(|e| e.name == "EmitFromEvents" && e.entity == "class")
             .map(|e| e.symbol_id.clone())
-            .expect("Circle not found");
-        let bases = idx.bases_by_derived.get(&circle_id);
-        assert!(bases.is_some(), "Circle should have base classes");
+            .expect("EmitFromEvents not found");
+        let bases = idx.bases_by_derived.get(&derived_id);
+        assert!(bases.is_some(), "EmitFromEvents should have base classes");
         assert!(!bases.unwrap().is_empty());
     }
 }

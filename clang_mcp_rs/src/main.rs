@@ -10,6 +10,8 @@ mod compile_db;
 mod index;
 #[allow(non_upper_case_globals)]
 mod symbols;
+#[cfg(test)]
+mod test_support;
 mod tools;
 mod types;
 

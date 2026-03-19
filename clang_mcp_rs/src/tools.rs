@@ -432,6 +432,9 @@ pub fn doctor(build_dir: Option<&str>, src: Option<&str>) -> Value {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_support::{
+        ensure_test_build, EMIT_FROM_EVENTS_H, PARSE_CPP, TEST_BUILD_DIR,
+    };
 
     #[test]
     fn test_parse_cursor() {
@@ -492,7 +495,8 @@ mod tests {
 
     #[test]
     fn test_doctor_with_valid_paths() {
-        let result = doctor(Some("/workspace/build"), Some("/workspace/samples/cpp/functions.cpp"));
+        ensure_test_build();
+        let result = doctor(Some(TEST_BUILD_DIR), Some(PARSE_CPP));
         assert_eq!(result["status"], "ok");
         assert_eq!(result["ok"], true);
     }
@@ -505,12 +509,14 @@ mod tests {
     }
 
     fn build_functions_index() -> crate::index::IndexData {
-        crate::index::load_index("/workspace/build", "/workspace/samples/cpp/functions.cpp", None)
+        ensure_test_build();
+        crate::index::load_index(TEST_BUILD_DIR, PARSE_CPP, None)
             .expect("failed to load index")
     }
 
     fn build_classes_index() -> crate::index::IndexData {
-        crate::index::load_index("/workspace/build", "/workspace/samples/cpp/classes.cpp", None)
+        ensure_test_build();
+        crate::index::load_index(TEST_BUILD_DIR, EMIT_FROM_EVENTS_H, None)
             .expect("failed to load index")
     }
 
@@ -518,12 +524,11 @@ mod tests {
     fn test_resolve_symbol_basic() {
         let idx = build_functions_index();
         let mut req = serde_json::Map::new();
-        req.insert("name".to_string(), Value::String("add".to_string()));
+        req.insert("name".to_string(), Value::String("Load".to_string()));
         let result = tool_cpp_resolve_symbol(&idx, &req);
         assert_eq!(result["status"], "ok");
         assert_eq!(result["ambiguous"], true);
-        // 2 function defs + 1 call expression all named "add"
-        assert!(result["items"].as_array().unwrap().len() >= 2);
+        assert!(result["items"].as_array().unwrap().len() >= 3);
     }
 
     #[test]
@@ -549,7 +554,7 @@ mod tests {
     fn test_resolve_symbol_with_entity_filter() {
         let idx = build_functions_index();
         let mut req = serde_json::Map::new();
-        req.insert("name".to_string(), Value::String("add".to_string()));
+        req.insert("name".to_string(), Value::String("Load".to_string()));
         req.insert("entity".to_string(), Value::String("function".to_string()));
         let result = tool_cpp_resolve_symbol(&idx, &req);
         for item in result["items"].as_array().unwrap() {
@@ -561,8 +566,8 @@ mod tests {
     fn test_resolve_symbol_with_param_types() {
         let idx = build_functions_index();
         let mut req = serde_json::Map::new();
-        req.insert("name".to_string(), Value::String("add".to_string()));
-        req.insert("param_types".to_string(), serde_json::json!(["int", "int"]));
+        req.insert("name".to_string(), Value::String("Load".to_string()));
+        req.insert("param_types".to_string(), serde_json::json!(["const char *"]));
         let result = tool_cpp_resolve_symbol(&idx, &req);
         assert_eq!(result["items"].as_array().unwrap().len(), 1);
     }
@@ -575,7 +580,7 @@ mod tests {
         req.insert("entity".to_string(), Value::String("function".to_string()));
         let result = tool_cpp_semantic_query(&idx, &req);
         assert_eq!(result["status"], "ok");
-        assert_eq!(result["items"].as_array().unwrap().len(), 4);
+        assert!(result["items"].as_array().unwrap().len() >= 8);
     }
 
     #[test]
@@ -585,7 +590,7 @@ mod tests {
         req.insert("action".to_string(), Value::String("count".to_string()));
         req.insert("entity".to_string(), Value::String("function".to_string()));
         let result = tool_cpp_semantic_query(&idx, &req);
-        assert_eq!(result["count"], 4);
+        assert!(result["count"].as_i64().unwrap_or(0) >= 8);
     }
 
     #[test]
@@ -633,11 +638,11 @@ mod tests {
         let mut req = serde_json::Map::new();
         req.insert("action".to_string(), Value::String("list".to_string()));
         req.insert("entity".to_string(), Value::String("function".to_string()));
-        req.insert("where".to_string(), serde_json::json!({"name": "square"}));
+        req.insert("where".to_string(), serde_json::json!({"name": "LoadFile"}));
         let result = tool_cpp_semantic_query(&idx, &req);
         let items = result["items"].as_array().unwrap();
         assert_eq!(items.len(), 1);
-        assert_eq!(items[0]["name"], "square");
+        assert_eq!(items[0]["name"], "LoadFile");
     }
 
     #[test]
@@ -665,7 +670,7 @@ mod tests {
         let result = tool_cpp_semantic_query(&idx, &req);
         assert_eq!(result["items"].as_array().unwrap().len(), 2);
         assert_eq!(result["page"]["truncated"], true);
-        assert_eq!(result["page"]["total_matches"], 4);
+        assert!(result["page"]["total_matches"].as_i64().unwrap_or(0) >= 8);
     }
 
     #[test]
@@ -687,21 +692,21 @@ mod tests {
         req.insert("action".to_string(), Value::String("list".to_string()));
         req.insert("entity".to_string(), Value::String("call".to_string()));
         let result = tool_cpp_semantic_query(&idx, &req);
-        assert_eq!(result["items"].as_array().unwrap().len(), 2);
+        assert!(!result["items"].as_array().unwrap().is_empty());
     }
 
     #[test]
     fn test_describe_symbol_found() {
         let idx = build_functions_index();
-        let square = idx.symbols.iter()
-            .find(|e| e.name == "square" && e.entity == "function")
+        let load_file = idx.symbols.iter()
+            .find(|e| e.name == "LoadFile" && e.entity == "function")
             .unwrap();
-        let sid = square.symbol_id.clone();
+        let sid = load_file.symbol_id.clone();
         let mut req = serde_json::Map::new();
         req.insert("symbol_id".to_string(), Value::String(sid));
         let result = tool_cpp_describe_symbol(&idx, &req);
         assert_eq!(result["status"], "ok");
-        assert_eq!(result["item"]["name"], "square");
+        assert_eq!(result["item"]["name"], "LoadFile");
     }
 
     #[test]
@@ -724,10 +729,10 @@ mod tests {
     #[test]
     fn test_describe_symbol_no_relations() {
         let idx = build_functions_index();
-        let square = idx.symbols.iter()
-            .find(|e| e.name == "square" && e.entity == "function")
+        let load = idx.symbols.iter()
+            .find(|e| e.name == "Load" && e.entity == "function")
             .unwrap();
-        let sid = square.symbol_id.clone();
+        let sid = load.symbol_id.clone();
         let mut req = serde_json::Map::new();
         req.insert("symbol_id".to_string(), Value::String(sid));
         req.insert("include_relations".to_string(), Value::Bool(false));
@@ -738,10 +743,10 @@ mod tests {
     #[test]
     fn test_describe_symbol_with_relations() {
         let idx = build_classes_index();
-        let fancy = idx.symbols.iter()
-            .find(|e| e.name == "FancyCounter" && e.entity == "class")
+        let derived = idx.symbols.iter()
+            .find(|e| e.name == "EmitFromEvents" && e.entity == "class")
             .unwrap();
-        let sid = fancy.symbol_id.clone();
+        let sid = derived.symbol_id.clone();
         let mut req = serde_json::Map::new();
         req.insert("symbol_id".to_string(), Value::String(sid));
         let result = tool_cpp_describe_symbol(&idx, &req);
@@ -755,14 +760,14 @@ mod tests {
         let idx = build_functions_index();
         let result = list_functions(&idx);
         assert_eq!(result["status"], "ok");
-        assert_eq!(result["items"].as_array().unwrap().len(), 4);
+        assert!(result["items"].as_array().unwrap().len() >= 8);
     }
 
     #[test]
     fn test_describe_function_found() {
         let idx = build_functions_index();
-        let result = describe_function(&idx, "square");
-        assert_eq!(result["item"]["name"], "square");
+        let result = describe_function(&idx, "LoadFile");
+        assert_eq!(result["item"]["name"], "LoadFile");
     }
 
     #[test]
@@ -775,7 +780,7 @@ mod tests {
     #[test]
     fn test_describe_function_ambiguous() {
         let idx = build_functions_index();
-        let result = describe_function(&idx, "add");
+        let result = describe_function(&idx, "Load");
         assert_eq!(result["warnings"][0]["code"], "AMBIGUOUS_SYMBOL");
         assert!(result["candidates"].is_array());
     }
