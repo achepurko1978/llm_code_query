@@ -34,13 +34,33 @@ binary.
 
 ```bash
 sudo apt-get update
-sudo apt-get install -y python3-clang
-pip install mcp
+sudo apt-get install -y python-is-python3 python3-clang python3-pip
+python -m pip install --break-system-packages mcp pytest
 ```
 
 The MCP server (`mcp_server.py`) requires the [MCP Python SDK](https://pypi.org/project/mcp/)
 (`mcp` package, which includes `anyio`). The clang back-end (`clang_mcp.py`)
 requires `python3-clang`.
+
+### Test MCP server locally
+
+From the repository root:
+
+```bash
+# 1) Run MCP server unit tests
+python -m pytest tests/test_mcp_server.py -q
+
+# 2) Quick runtime sanity check (CLI starts)
+python mcp_server.py --help
+```
+
+Expected test result: `91 passed`.
+
+Optional: run all Python tests in the repo.
+
+```bash
+python -m pytest tests -q
+```
 
 ### Prepare compile database
 
@@ -51,10 +71,10 @@ CC=clang CXX=clang++ cmake -S . -B build
 ### Run
 
 ```bash
-python3 clang_mcp.py doctor
-python3 clang_mcp.py --build-dir build --file sample.cpp cpp_resolve_symbol --request-json '{"name":"add"}'
-python3 clang_mcp.py --build-dir build --file sample.cpp cpp_semantic_query --request-json '{"action":"list","entity":"function"}'
-python3 clang_mcp.py --build-dir build --file sample.cpp cpp_describe_symbol --request-json '{"symbol_id":"c:@F@add#I#I#"}'
+python clang_mcp.py doctor
+python clang_mcp.py --build-dir build --file sample.cpp cpp_resolve_symbol --request-json '{"name":"add"}'
+python clang_mcp.py --build-dir build --file sample.cpp cpp_semantic_query --request-json '{"action":"list","entity":"function"}'
+python clang_mcp.py --build-dir build --file sample.cpp cpp_describe_symbol --request-json '{"symbol_id":"c:@F@add#I#I#"}'
 ```
 
 ---
@@ -115,16 +135,13 @@ cargo test
 Prebuilt sample cases for `samples/cpp` are stored in `samples/cli_examples`.
 Each example is a real, copy-paste-ready CLI command.
 
-List all available examples:
+Show all available copy-paste commands:
 
 ```bash
-source /workspace/samples/cli_examples/cli.sh
-list_examples
+bash /workspace/samples/cli_examples/cli.sh
 
-# Copy-paste any example to run it:
-example_doctor
-example_resolve_load_ambiguous | jq .items[0]
-example_semantic_count_calls_parse
+# Or run one specific example function
+bash /workspace/samples/cli_examples/cli.sh example_doctor
 ```
 
 Validate all examples against saved golden outputs:
@@ -136,7 +153,7 @@ bash /workspace/samples/cli_examples/cli.sh validate
 Refresh golden outputs after intentional behavior changes:
 
 ```bash
-bash /workspace/samples/cli_examples/update_expected.sh
+bash /workspace/samples/cli_examples/regenerate_golden.sh
 ```
 
 ### Install
@@ -238,7 +255,7 @@ Everything else (tool names, request/response format) is identical.
 
 Required Python package (for `mcp_server.py`):
 
-- `mcp` (`pip install mcp`)
+- `mcp` (`python -m pip install --break-system-packages mcp`)
 
 Required generated file (from your CMake configure step):
 

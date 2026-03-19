@@ -23,7 +23,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     python3 \
     python3-pip \
+    python-is-python3 \
+    python3-clang \
     && rm -rf /var/lib/apt/lists/*
+
+# Install Python MCP dependencies globally (no virtualenv).
+RUN python -m pip install --break-system-packages \
+    mcp \
+    pytest
 
 # Install the newest Clang/LLVM toolchain from apt.llvm.org.
 RUN wget -O /tmp/llvm.sh https://apt.llvm.org/llvm.sh \
