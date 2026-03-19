@@ -7,6 +7,8 @@ services:
       args:
         GIT_REPO_URL: ${GIT_REPO_URL:-https://github.com/achepurko1978/llm_code_query.git}
         GIT_REF: ${GIT_REF:-main}
+        GIT_USER_NAME: ${GIT_USER_NAME:-Andrey Chepurko}
+        GIT_USER_EMAIL: ${GIT_USER_EMAIL:-achepurko1978@users.noreply.github.com}
     container_name: llm-code-query-dev
     working_dir: /workspace
     stdin_open: true

@@ -16,6 +16,13 @@ You can override the repository URL and revision (branch, tag, or commit):
 GIT_REPO_URL=https://github.com/achepurko1978/llm_code_query.git GIT_REF=main docker compose build dev
 ```
 
+The image also sets a default Git identity for commits created inside the
+container. Override it at build time if needed:
+
+```bash
+GIT_USER_NAME="Andrey Chepurko" GIT_USER_EMAIL=achepurko1978@users.noreply.github.com docker compose build dev
+```
+
 When remote source changes, rebuild the image to pick up updates:
 
 ```bash
@@ -74,6 +81,58 @@ python mcp_server.py \
 	--build-dir /workspace/samples/cpp/build-rust-tests \
 	--clang-script /workspace/clang_mcp_rs/target/release/clang_mcp
 ```
+
+### Debug with MCP Inspector (Docker/dev container)
+
+Install Inspector once:
+
+```bash
+sudo apt-get update
+sudo apt-get install -y nodejs npm
+npm install -g @modelcontextprotocol/inspector
+```
+
+Start Inspector on known-good ports (keep terminal open):
+
+```bash
+pkill -f mcp-inspector || true
+HOST=0.0.0.0 SERVER_PORT=38139 CLIENT_PORT=42427 DANGEROUSLY_OMIT_AUTH=true mcp-inspector
+```
+
+Open the UI from inside container:
+
+```bash
+$BROWSER "http://127.0.0.1:42427/?MCP_PROXY_PORT=38139"
+```
+
+In Inspector UI, configure MCP server transport as `stdio` with:
+
+- Command: `python`
+- Args (copy/paste as JSON array):
+
+```json
+[
+	"/workspace/mcp_server.py",
+  "--workspace-root",
+  "/workspace",
+  "--build-dir",
+  "/workspace/samples/cpp/build-rust-tests",
+  "--clang-script",
+  "/workspace/clang_mcp_rs/target/release/clang_mcp"
+]
+```
+
+- Args (copy/paste as one line):
+
+```bash
+/workspace/mcp_server.py --workspace-root /workspace --build-dir /workspace/samples/cpp/build-rust-tests --clang-script /workspace/clang_mcp_rs/target/release/clang_mcp
+```
+
+Notes:
+
+- Do not run Inspector under `timeout`; that terminates it.
+- If you see `PORT IS IN USE`, pick another pair of free ports and restart Inspector.
+- If browser still cannot connect, forward ports `42427` and `38139` in VS Code Ports view.
 
 ---
 

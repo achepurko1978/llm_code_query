@@ -3,6 +3,8 @@ FROM ubuntu:latest
 ENV DEBIAN_FRONTEND=noninteractive
 ARG GIT_REPO_URL=https://github.com/achepurko1978/llm_code_query.git
 ARG GIT_REF=main
+ARG GIT_USER_NAME="Andrey Chepurko"
+ARG GIT_USER_EMAIL=achepurko1978@users.noreply.github.com
 
 # Install build essentials and tooling required to add the official LLVM apt repo.
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -66,6 +68,10 @@ RUN git clone --filter=blob:none "$GIT_REPO_URL" /workspace \
     && cd /workspace \
     && git checkout "$GIT_REF" \
     && git submodule update --init --recursive
+
+# Set default git identity inside the container to avoid exposing personal emails.
+RUN git config --global user.name "$GIT_USER_NAME" \
+    && git config --global user.email "$GIT_USER_EMAIL"
 
 # Optionally pre-build Rust target if the Rust backend exists in the cloned repo.
 RUN if [ -f /workspace/clang_mcp_rs/Cargo.toml ]; then \
