@@ -349,6 +349,33 @@ class TestStripDirScope:
         assert result == args
 
 
+class TestNormalizeIncludeSourceFromFields:
+    def test_semantic_query_enables_include_source_for_source_field(self):
+        args = {"action": "list", "fields": ["symbol_id", "source"]}
+        result = srv._normalize_include_source_from_fields("cpp_semantic_query", args)
+        assert result.get("include_source") is True
+
+    def test_semantic_query_enables_include_source_for_extent_field(self):
+        args = {"action": "list", "fields": ["extent"]}
+        result = srv._normalize_include_source_from_fields("cpp_semantic_query", args)
+        assert result.get("include_source") is True
+
+    def test_semantic_query_preserves_when_already_true(self):
+        args = {"action": "list", "fields": ["source"], "include_source": True}
+        result = srv._normalize_include_source_from_fields("cpp_semantic_query", args)
+        assert result.get("include_source") is True
+
+    def test_semantic_query_noop_without_source_fields(self):
+        args = {"action": "list", "fields": ["symbol_id"]}
+        result = srv._normalize_include_source_from_fields("cpp_semantic_query", args)
+        assert "include_source" not in result
+
+    def test_non_semantic_query_passthrough(self):
+        args = {"fields": ["source"]}
+        result = srv._normalize_include_source_from_fields("cpp_resolve_symbol", args)
+        assert result == args
+
+
 # ---------------------------------------------------------------------------
 # run_backend
 # ---------------------------------------------------------------------------
@@ -446,6 +473,14 @@ class TestRouteToolCall:
         assert result["result_kind"] == "list"
         assert len(result["items"]) == 5
         assert result["page"]["truncated"] is True
+
+    @mock.patch("mcp_server.run_backend")
+    def test_semantic_query_auto_sets_include_source_from_fields(self, mock_be):
+        mock_be.return_value = {"status": "ok", "items": [], "warnings": []}
+        srv.route_tool_call(Path("x"), "bd", Path("/ws"), ["/ws/a.cpp"],
+                            "cpp_semantic_query", {"action": "list", "entity": "method", "fields": ["symbol_id", "source"]}, 10)
+        args_obj = mock_be.call_args[0][4]
+        assert args_obj.get("include_source") is True
 
     @mock.patch("mcp_server.run_backend")
     def test_semantic_query_list_with_cursor(self, mock_be):

@@ -213,6 +213,32 @@ Refresh golden outputs after intentional behavior changes:
 bash /workspace/samples/cli_examples/regenerate_golden.sh
 ```
 
+### Raw MCP JSON-RPC tool calls (via `mcp_server.py`)
+
+If you want to test MCP server tool calls directly with JSON arguments over stdio,
+use the helper script:
+
+```bash
+# Show usage
+bash /workspace/samples/cli_examples/mcp_raw_tool_call.sh --help
+
+# Shorthand form: tool name + JSON args
+bash /workspace/samples/cli_examples/mcp_raw_tool_call.sh cpp_semantic_query '{"action":"list","entity":"function","scope":{"file":"samples/cpp/src/parse.cpp"},"where":{"name":"Load"},"limit":5}'
+
+# Full form: workspace_root build_dir clang_script tool_name JSON args
+bash /workspace/samples/cli_examples/mcp_raw_tool_call.sh /workspace /workspace/samples/cpp/build-rust-tests /workspace/clang_mcp_rs/target/release/clang_mcp cpp_resolve_symbol '{"name":"Load"}'
+
+# Read arguments JSON from a file
+bash /workspace/samples/cli_examples/mcp_raw_tool_call.sh cpp_semantic_query @/workspace/request.json
+
+# Use bundled sample request JSON
+bash /workspace/samples/cli_examples/mcp_raw_tool_call.sh cpp_semantic_query @/workspace/samples/cli_examples/request.semantic.list.load.json
+```
+
+Bundled sample request file:
+
+- `/workspace/samples/cli_examples/request.semantic.list.load.json`
+
 ### Install
 
 ```bash

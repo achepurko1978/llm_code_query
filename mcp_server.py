@@ -299,12 +299,32 @@ def _normalize_scope_directory(call_args: dict[str, Any]) -> dict[str, Any]:
     return call_args
 
 
+def _normalize_include_source_from_fields(cmd: str, call_args: dict[str, Any]) -> dict[str, Any]:
+    """For semantic queries, auto-enable include_source when fields request source/extent."""
+    if cmd != "cpp_semantic_query":
+        return call_args
+
+    fields = call_args.get("fields")
+    if not isinstance(fields, list):
+        return call_args
+
+    wants_source = any(f in ("source", "extent") for f in fields if isinstance(f, str))
+    if not wants_source:
+        return call_args
+
+    if call_args.get("include_source") is True:
+        return call_args
+
+    return {**call_args, "include_source": True}
+
+
 def route_tool_call(clang_script: Path, build_dir: str, workspace_root: Path,
                     files: list[str], cmd: str, call_args: dict[str, Any],
                     timeout_sec: int) -> dict[str, Any]:
     if not files:
         return _backend_error("NO_SOURCE_FILES", "no source files found in compile_commands.json")
     call_args = _normalize_scope_directory(call_args)
+    call_args = _normalize_include_source_from_fields(cmd, call_args)
     targets, dir_scope = target_files_for_tool(cmd, call_args, files, workspace_root)
     if not targets:
         return _backend_error("NO_TARGET_FILES", "no matching target files for request")

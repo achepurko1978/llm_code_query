@@ -1,0 +1,15 @@
+{
+  "action": "list",
+  "entity": "method",
+  "scope": {
+    "file": "samples/cpp/src/simplekey.cpp"
+  },
+  "where": {
+    "return_type": "void"
+  },
+  "fields": [
+    "symbol_id",
+    "extent",
+    "source"
+  ]
+}

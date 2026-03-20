@@ -1,4 +1,6 @@
 build/*
+clang_mcp_rs/target/
+samples/cpp/build-rust-tests/
 __pycache__/
 *.pyc
 .pytest_cache/
