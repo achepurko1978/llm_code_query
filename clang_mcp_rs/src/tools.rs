@@ -81,8 +81,13 @@ pub fn tool_cpp_resolve_symbol(idx: &IndexData, req: &serde_json::Map<String, Va
         aqn.cmp(bqn)
     });
 
+    // When no explicit file filter is given, restrict to the source file so
+    // that symbols from included workspace headers don't leak into results.
+    let restrict_to_src = file_filter.is_none();
+
     let mut filtered: Vec<Value> = Vec::new();
     for (_, entry) in &sorted {
+        if restrict_to_src && !is_in_file(entry, &idx.src) { continue; }
         let s = &entry.summary;
         if let Some(ef) = entity_filter {
             if s.get("entity").and_then(|v| v.as_str()) != Some(ef) { continue; }
@@ -145,6 +150,13 @@ pub fn tool_cpp_semantic_query(idx: &IndexData, req: &serde_json::Map<String, Va
     let fields: Option<HashSet<String>> = req.get("fields").and_then(|v| v.as_array())
         .map(|arr| arr.iter().filter_map(|v| v.as_str().map(String::from)).collect());
 
+    // When no explicit scope.path / scope.file / scope.directory is given,
+    // restrict results to the source file so that symbols from included
+    // workspace headers don't leak into results.
+    let has_path_scope = scope.map_or(false, |s| {
+        s.contains_key("path") || s.contains_key("file") || s.contains_key("directory")
+    });
+
     let matches: Vec<Value> = if entity == "file" {
         let src_norm = norm(&idx.src);
         let fname = Path::new(&idx.src).file_name().map(|f| f.to_string_lossy().into_owned()).unwrap_or_default();
@@ -172,6 +184,7 @@ pub fn tool_cpp_semantic_query(idx: &IndexData, req: &serde_json::Map<String, Va
     } else {
         idx.symbols.iter()
             .filter(|e| e.entity == entity)
+            .filter(|e| has_path_scope || is_in_file(e, &idx.src))
             .filter(|e| passes_scope(e, scope))
             .filter(|e| passes_where(idx, e, where_clause))
             .map(|e| {
