@@ -1,8 +1,8 @@
 /// clang_mcp — Rust drop-in replacement for clang_mcp.py.
 ///
 /// Provides semantic analysis of C++ source files using libclang,
-/// exposing tool commands (cpp_resolve_symbol, cpp_semantic_query,
-/// cpp_describe_symbol) and legacy commands (list-functions, describe-function, doctor).
+/// exposing the tool command (cpp_semantic_query) and legacy commands
+/// (list-functions, describe-function, doctor).
 #[allow(non_upper_case_globals)]
 mod clang_wrapper;
 mod compile_db;
@@ -58,24 +58,8 @@ enum Commands {
     #[command(name = "doctor")]
     Doctor,
 
-    #[command(name = "cpp_resolve_symbol")]
-    CppResolveSymbol {
-        #[arg(long = "request-json")]
-        request_json: Option<String>,
-        #[arg(long = "request-file")]
-        request_file: Option<String>,
-    },
-
     #[command(name = "cpp_semantic_query")]
     CppSemanticQuery {
-        #[arg(long = "request-json")]
-        request_json: Option<String>,
-        #[arg(long = "request-file")]
-        request_file: Option<String>,
-    },
-
-    #[command(name = "cpp_describe_symbol")]
-    CppDescribeSymbol {
         #[arg(long = "request-json")]
         request_json: Option<String>,
         #[arg(long = "request-file")]
@@ -126,17 +110,9 @@ fn main() {
     let output: Value = match command {
         Commands::Doctor => tools::doctor(build.as_deref(), src.as_deref()),
 
-        Commands::CppResolveSymbol { request_json, request_file } => {
-            let (b, s) = require_build_and_file(&build, &src, "cpp_* tool commands");
-            run_tool(b, s, ws_root.as_deref(), "cpp_resolve_symbol", &request_json, &request_file)
-        }
         Commands::CppSemanticQuery { request_json, request_file } => {
             let (b, s) = require_build_and_file(&build, &src, "cpp_* tool commands");
             run_tool(b, s, ws_root.as_deref(), "cpp_semantic_query", &request_json, &request_file)
-        }
-        Commands::CppDescribeSymbol { request_json, request_file } => {
-            let (b, s) = require_build_and_file(&build, &src, "cpp_* tool commands");
-            run_tool(b, s, ws_root.as_deref(), "cpp_describe_symbol", &request_json, &request_file)
         }
 
         Commands::ListFunctions => {
@@ -174,9 +150,7 @@ fn run_tool(
 
     match index::load_index(build_dir, src, ws_root) {
         Ok(idx) => match cmd_name {
-            "cpp_resolve_symbol" => tools::tool_cpp_resolve_symbol(&idx, &req),
             "cpp_semantic_query" => tools::tool_cpp_semantic_query(&idx, &req),
-            "cpp_describe_symbol" => tools::tool_cpp_describe_symbol(&idx, &req),
             _ => die(&format!("unknown command: {cmd_name}")),
         },
         Err(e) => build_error_response(cmd_name, &e.to_string()),
@@ -185,31 +159,12 @@ fn run_tool(
 
 fn build_error_response(cmd_name: &str, message: &str) -> Value {
     let kind = match cmd_name {
-        "cpp_resolve_symbol" => "resolve_symbol",
         "cpp_semantic_query" => "list",
-        "cpp_describe_symbol" => "describe_symbol",
         _ => "list",
     };
     let mut out = types::error_base("INTERNAL_ERROR", message);
     out.insert("result_kind".to_string(), Value::String(kind.to_string()));
-    match kind {
-        "resolve_symbol" => {
-            out.insert("ambiguous".to_string(), Value::Bool(false));
-            out.insert("items".to_string(), Value::Array(vec![]));
-            out.insert("page".to_string(), types::page_json(None, false, 0));
-        }
-        "list" => {
-            out.insert("items".to_string(), Value::Array(vec![]));
-            out.insert("page".to_string(), types::page_json(None, false, 0));
-        }
-        "describe_symbol" => {
-            let mut item = serde_json::Map::new();
-            item.insert("symbol_id".to_string(), Value::String(String::new()));
-            item.insert("entity".to_string(), Value::String("file".to_string()));
-            item.insert("name".to_string(), Value::String(String::new()));
-            out.insert("item".to_string(), Value::Object(item));
-        }
-        _ => {}
-    }
+    out.insert("items".to_string(), Value::Array(vec![]));
+    out.insert("page".to_string(), types::page_json(None, false, 0));
     Value::Object(out)
 }

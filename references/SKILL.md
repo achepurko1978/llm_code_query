@@ -5,58 +5,27 @@ description: Use the local clang-cpp MCP server for semantic queries over this C
 
 # Purpose
 
-Use this skill when working with a C++ codebase that exposes the following MCP tools:
+Use this skill when working with a C++ codebase that exposes the following MCP tool:
 
-- `cpp_resolve_symbol`
 - `cpp_semantic_query`
-- `cpp_describe_symbol`
 
 This skill teaches the agent:
 
-- when to use each tool
-- how to sequence tool calls
 - how to construct precise `cpp_semantic_query` inputs
 - how to write complex `where` clauses accurately
+- how to use scope.path for fast, targeted queries
 - when to fall back safely if the MCP server cannot answer
 
 # Core rules
 
-- Always prefer the MCP tools over grep, text search, or AST guessing.
-- Never infer symbol identity from text alone when `cpp_resolve_symbol` can disambiguate.
-- When the user names a symbol, resolve it first before performing operations.
+- Always prefer the MCP tool over grep, text search, or AST guessing.
 - When a query depends on relationships, scope, inheritance, or overrides, use `cpp_semantic_query`.
-- When the user wants a summary of one symbol before editing or reasoning about it, use `cpp_describe_symbol`.
+- Use grep or file_search first to identify the file, then scope the semantic query with `scope.path`.
 - If MCP fails, state this explicitly, then fall back to text search only if necessary.
-- Treat `symbol_id` as an opaque identifier—never parse or construct it manually.
-- Prefer exact symbol-based queries over loose name-based queries once a symbol has been resolved.
 
 # Tool selection
 
-## 1) `cpp_resolve_symbol`
-
-Use when:
-
-- the user names a function, method, class, namespace, enum, field, parameter, or variable
-- the name may be overloaded or ambiguous
-- the same name may exist in multiple namespaces or classes
-- a subsequent semantic query must target one exact symbol
-
-Typical uses:
-
-- resolve `foo`
-- resolve `ns::foo`
-- resolve `MyClass::bar`
-- resolve overloaded `push_back`
-- resolve `main`
-
-Use this before relation queries such as:
-
-- callers / callees
-- overrides
-- base / derived relationships
-- queries scoped to a function or class
-
-## 2) `cpp_semantic_query`
+## `cpp_semantic_query`
 
 Use when the user wants:
 
@@ -70,23 +39,13 @@ Use when the user wants:
 - scoped structural searches
 - retrieving full source bodies in bulk (set `"include_source": true`)
 
-This is the primary workhorse tool.
-
-## 3) `cpp_describe_symbol`
-
-Use when the user wants:
-
-- "what is this symbol?"
-- a normalized summary before editing
-- one bounded semantic summary of a class, function, or method
-- a concise explanation of signature, location, and key relations
-- the full source body of a function, method, or class (set `"include_source": true`)
+This is the only MCP tool. Use grep to find the right file first, then scope queries with `scope.path`.
 
 # Query strategy
 
-## Resolve-first pattern
+## Grep-then-query pattern
 
-Use this pattern when a user provides a symbol name and then asks a relation question.
+Use this when a user provides a symbol name and asks about it.
 
 Example:
 
@@ -94,10 +53,8 @@ User asks: "Find all callers of `foo`."
 
 Preferred flow:
 
-1. call `cpp_resolve_symbol` for `foo`
-2. inspect candidates
-3. if ambiguous, select the most contextually appropriate candidate only if context clearly indicates which one
-4. call `cpp_semantic_query` using the resolved symbol identity or an exact qualified target
+1. grep for `foo` to identify which file it lives in
+2. call `cpp_semantic_query` with `scope.path` set to that file
 
 ## Scope-first pattern
 
@@ -224,7 +181,7 @@ Typical field sets:
 
 ## For source body retrieval
 
-Pass `"include_source": true` in the request (works with both `cpp_semantic_query` and `cpp_describe_symbol`). The response will include:
+Pass `"include_source": true` in the `cpp_semantic_query` request. The response will include:
 
 - `"source"` — full source text (declaration + body)
 - `"extent"` — `{"start_line": N, "end_line": M}`
@@ -452,7 +409,7 @@ Resolve `add` first, then use `relations.calls`:
 }
 ```
 
-If the exact symbol_id is known from `cpp_resolve_symbol`:
+If the exact symbol_id is known from a previous query:
 
 ```json
 {
@@ -907,13 +864,12 @@ Since `scope.inside_function` is not implemented:
 
 # Ambiguity handling
 
-If `cpp_resolve_symbol` returns multiple candidates:
+If a semantic query returns multiple candidates:
 
 - do not silently choose one if the context is insufficient
 - prefer exact `qualified_name`
 - prefer matching entity kind
 - prefer the candidate in the file or namespace already under discussion
-- once chosen, use `symbol_id` for all downstream calls
 
 # Fallback guidance
 
@@ -954,23 +910,22 @@ When reporting results:
 
 ## Recipe: explain a symbol before changing it
 
-1. `cpp_resolve_symbol`
-2. `cpp_describe_symbol`
+1. grep to find the file containing the symbol
+2. `cpp_semantic_query` with `scope.path` and `include_source: true` to get the full source
 
 ## Recipe: edit code touching virtual dispatch
 
-1. resolve the class or method
-2. find overrides / base relations
-3. describe key symbols
+1. find the class/method file via grep
+2. query for methods with `where: {override: true}` in that scope
+3. query for base classes
 4. then propose edits
 
 ## Recipe: understand a function body semantically
 
-1. resolve the function
-2. describe with `"include_source": true` to get the full body
+1. grep to find the file
+2. `cpp_semantic_query` with `include_source: true` and `where: {name: "functionName"}` to get the full body
 3. find calls inside it
 4. find variables inside it if needed
-5. describe important callee symbols
 
 ## Recipe: retrieve source of all functions in a file
 
@@ -980,9 +935,9 @@ When reporting results:
 
 ## Recipe: get a class definition with full source
 
-1. `cpp_resolve_symbol` for the class name
-2. `cpp_describe_symbol` with `{"symbol_id": "...", "include_source": true}`
-3. the response contains the class source, members, and relations
+1. grep to find the file containing the class
+2. `cpp_semantic_query` with `{"entity": "class", "action": "find", "scope": {"path": "..."}, "where": {"name": "ClassName"}, "include_source": true}`
+3. the response contains the class source and location
 
 # Final preference order
 

@@ -165,17 +165,9 @@ The Rust CLI is the back-end binary used by `mcp_server.py`:
 # Health check
 ./clang_mcp_rs/target/release/clang_mcp --build-dir samples/cpp/build-rust-tests --file samples/cpp/src/parse.cpp doctor
 
-# Resolve a symbol
-./clang_mcp_rs/target/release/clang_mcp --build-dir samples/cpp/build-rust-tests --file samples/cpp/src/parse.cpp \
-	cpp_resolve_symbol --request-json '{"name":"Load"}'
-
 # Semantic query
 ./clang_mcp_rs/target/release/clang_mcp --build-dir samples/cpp/build-rust-tests --file samples/cpp/src/parser.cpp \
     cpp_semantic_query --request-json '{"action":"list","entity":"function"}'
-
-# Describe a symbol
-./clang_mcp_rs/target/release/clang_mcp --build-dir samples/cpp/build-rust-tests --file samples/cpp/include/yaml-cpp/exceptions.h \
-	cpp_describe_symbol --request-json '{"symbol_id":"c:@N@YAML@S@BadConversion"}'
 ```
 
 Requests can also be passed via `--request-file path/to/request.json`.
@@ -226,7 +218,7 @@ bash /workspace/samples/cli_examples/mcp_raw_tool_call.sh --help
 bash /workspace/samples/cli_examples/mcp_raw_tool_call.sh cpp_semantic_query '{"action":"list","entity":"function","scope":{"path":"samples/cpp/src/parse.cpp"},"where":{"name":"Load"},"limit":5}'
 
 # Full form: workspace_root build_dir clang_script tool_name JSON args
-bash /workspace/samples/cli_examples/mcp_raw_tool_call.sh /workspace /workspace/samples/cpp/build-rust-tests /workspace/clang_mcp_rs/target/release/clang_mcp cpp_resolve_symbol '{"name":"Load"}'
+bash /workspace/samples/cli_examples/mcp_raw_tool_call.sh /workspace /workspace/samples/cpp/build-rust-tests /workspace/clang_mcp_rs/target/release/clang_mcp cpp_semantic_query '{"action":"list","entity":"function","where":{"name":"Load"}}'
 
 # Read arguments JSON from a file
 bash /workspace/samples/cli_examples/mcp_raw_tool_call.sh cpp_semantic_query @/workspace/request.json

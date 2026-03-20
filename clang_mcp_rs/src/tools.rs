@@ -1,4 +1,4 @@
-/// Tool implementations: cpp_resolve_symbol, cpp_semantic_query, cpp_describe_symbol.
+/// Tool implementations: cpp_semantic_query.
 ///
 /// Each tool takes an IndexData + request, and returns a JSON response as
 /// `serde_json::Value`, matching the Python output format exactly.
@@ -26,100 +26,6 @@ fn page_slice(items: &[Value], limit: usize, cursor: Option<&str>) -> (Vec<Value
     let truncated = nxt < total;
     let next_cursor = if truncated { Some(nxt.to_string()) } else { None };
     (xs, page_json(next_cursor, truncated, total))
-}
-
-// ---------------------------------------------------------------------------
-// cpp_resolve_symbol
-// ---------------------------------------------------------------------------
-
-pub fn tool_cpp_resolve_symbol(idx: &IndexData, req: &serde_json::Map<String, Value>) -> Value {
-    let name = match req.get("name").and_then(|v| v.as_str()) {
-        Some(n) => n,
-        None => {
-            let mut out = error_base("INVALID_REQUEST", "name is required");
-            out.insert("result_kind".to_string(), Value::String("resolve_symbol".to_string()));
-            out.insert("ambiguous".to_string(), Value::Bool(false));
-            out.insert("items".to_string(), Value::Array(vec![]));
-            out.insert("page".to_string(), page_json(None, false, 0));
-            return Value::Object(out);
-        }
-    };
-
-    let limit = req.get("limit").and_then(|v| v.as_i64()).unwrap_or(5000).clamp(1, 50000) as usize;
-    let nlow = name.to_lowercase();
-
-    let mut exact: Vec<(usize, &SymbolEntry)> = Vec::new();
-    let mut fuzzy: Vec<(usize, &SymbolEntry)> = Vec::new();
-
-    for (i, entry) in idx.symbols.iter().enumerate() {
-        let sname = entry.summary.get("name").and_then(|v| v.as_str()).unwrap_or("");
-        if sname == name {
-            exact.push((i, entry));
-        } else {
-            let sqn = entry.summary.get("qualified_name").and_then(|v| v.as_str()).unwrap_or("");
-            if sname.to_lowercase().contains(&nlow) || sqn.to_lowercase().contains(&nlow) {
-                fuzzy.push((i, entry));
-            }
-        }
-    }
-
-    let candidates = if !exact.is_empty() { exact } else { fuzzy };
-
-    let entity_filter = req.get("entity").and_then(|v| v.as_str());
-    let qn_filter = req.get("qualified_name").and_then(|v| v.as_str());
-    let file_filter = req.get("file").and_then(|v| v.as_str());
-    let param_types_filter = req.get("param_types").and_then(|v| v.as_array());
-
-    let mut sorted = candidates;
-    sorted.sort_by(|a, b| {
-        let aqn = a.1.summary.get("qualified_name").and_then(|v| v.as_str())
-            .or_else(|| a.1.summary.get("name").and_then(|v| v.as_str()))
-            .unwrap_or("");
-        let bqn = b.1.summary.get("qualified_name").and_then(|v| v.as_str())
-            .or_else(|| b.1.summary.get("name").and_then(|v| v.as_str()))
-            .unwrap_or("");
-        aqn.cmp(bqn)
-    });
-
-    // When no explicit file filter is given, restrict to the source file so
-    // that symbols from included workspace headers don't leak into results.
-    let restrict_to_src = file_filter.is_none();
-
-    let mut filtered: Vec<Value> = Vec::new();
-    for (_, entry) in &sorted {
-        if restrict_to_src && !is_in_file(entry, &idx.src) { continue; }
-        let s = &entry.summary;
-        if let Some(ef) = entity_filter {
-            if s.get("entity").and_then(|v| v.as_str()) != Some(ef) { continue; }
-        }
-        if let Some(qf) = qn_filter {
-            if s.get("qualified_name").and_then(|v| v.as_str()) != Some(qf) { continue; }
-        }
-        if let Some(ff) = file_filter {
-            let lf = s.get("location").and_then(|v| v.as_object()).and_then(|o| o.get("file")).and_then(|v| v.as_str());
-            match lf {
-                Some(f) if norm(f) == norm(ff) => {}
-                _ => continue,
-            }
-        }
-        if let Some(pt) = param_types_filter {
-            let want: Vec<String> = pt.iter().map(|v| v.as_str().unwrap_or("").to_string()).collect();
-            if entry.param_types != want { continue; }
-        }
-        filtered.push(Value::Object(s.clone()));
-    }
-
-    let (items, page) = page_slice(&filtered, limit, None);
-    let ambiguous = filtered.len() > 1;
-
-    let mut out = serde_json::Map::new();
-    out.insert("status".to_string(), Value::String("ok".to_string()));
-    out.insert("result_kind".to_string(), Value::String("resolve_symbol".to_string()));
-    out.insert("ambiguous".to_string(), Value::Bool(ambiguous));
-    out.insert("items".to_string(), Value::Array(items));
-    out.insert("warnings".to_string(), Value::Array(vec![]));
-    out.insert("page".to_string(), page);
-    Value::Object(out)
 }
 
 // ---------------------------------------------------------------------------
@@ -235,70 +141,6 @@ pub fn tool_cpp_semantic_query(idx: &IndexData, req: &serde_json::Map<String, Va
     }
 }
 
-// ---------------------------------------------------------------------------
-// cpp_describe_symbol
-// ---------------------------------------------------------------------------
-
-pub fn tool_cpp_describe_symbol(idx: &IndexData, req: &serde_json::Map<String, Value>) -> Value {
-    let sid = match req.get("symbol_id").and_then(|v| v.as_str()) {
-        Some(s) => s,
-        None => {
-            let mut out = error_base("INVALID_REQUEST", "symbol_id is required");
-            out.insert("result_kind".to_string(), Value::String("describe_symbol".to_string()));
-            let mut empty_item = serde_json::Map::new();
-            empty_item.insert("symbol_id".to_string(), Value::String(String::new()));
-            empty_item.insert("entity".to_string(), Value::String("file".to_string()));
-            empty_item.insert("name".to_string(), Value::String(String::new()));
-            out.insert("item".to_string(), Value::Object(empty_item));
-            return Value::Object(out);
-        }
-    };
-
-    let include_relations = req.get("include_relations").and_then(|v| v.as_bool()).unwrap_or(true);
-    let relation_limit = req.get("relation_limit").and_then(|v| v.as_i64()).unwrap_or(5000).clamp(0, 50000) as usize;
-    let include_source = req.get("include_source").and_then(|v| v.as_bool()).unwrap_or(false);
-
-    let entry_idx = match idx.by_id.get(sid) {
-        Some(&i) => i,
-        None => {
-            let mut out = serde_json::Map::new();
-            out.insert("status".to_string(), Value::String("ok".to_string()));
-            out.insert("result_kind".to_string(), Value::String("describe_symbol".to_string()));
-            let mut item = serde_json::Map::new();
-            item.insert("symbol_id".to_string(), Value::String(sid.to_string()));
-            item.insert("entity".to_string(), Value::String("file".to_string()));
-            item.insert("name".to_string(), Value::String(String::new()));
-            out.insert("item".to_string(), Value::Object(item));
-            out.insert("warnings".to_string(), Value::Array(vec![serde_json::json!({
-                "code": "NO_MATCH",
-                "message": format!("symbol not found: {sid}")
-            })]));
-            return Value::Object(out);
-        }
-    };
-
-    let entry = &idx.symbols[entry_idx];
-    let mut s = entry.summary.clone();
-
-    if include_relations {
-        let rels = build_relations(idx, sid, relation_limit);
-        if !rels.is_empty() {
-            s.insert("relations".to_string(), Value::Object(rels));
-        }
-    }
-
-    if include_source {
-        enrich_with_source(entry, &mut s);
-    }
-
-    let mut out = serde_json::Map::new();
-    out.insert("status".to_string(), Value::String("ok".to_string()));
-    out.insert("result_kind".to_string(), Value::String("describe_symbol".to_string()));
-    out.insert("item".to_string(), Value::Object(s));
-    out.insert("warnings".to_string(), Value::Array(vec![]));
-    Value::Object(out)
-}
-
 /// Attach `source` and `extent` fields to a symbol summary using the entry's stored extent.
 fn enrich_with_source(entry: &SymbolEntry, summary: &mut serde_json::Map<String, Value>) {
     let (start, end) = entry.extent;
@@ -322,43 +164,6 @@ fn enrich_with_source(entry: &SymbolEntry, summary: &mut serde_json::Map<String,
             "end_line": end
         }));
     }
-}
-
-fn build_relations(idx: &IndexData, sid: &str, limit: usize) -> serde_json::Map<String, Value> {
-    let mut rels = serde_json::Map::new();
-
-    let rel_list = |kind: &str, ids: &[String]| -> Vec<Value> {
-        ids.iter().take(limit).filter_map(|rid| {
-            idx.relation_summaries.get(rid).map(|rs| {
-                let mut m = rs.clone();
-                m.insert("kind".to_string(), Value::String(kind.to_string()));
-                Value::Object(m)
-            })
-        }).collect()
-    };
-
-    if let Some(calls) = idx.calls_by_caller.get(sid) {
-        let list = rel_list("calls", calls);
-        if !list.is_empty() { rels.insert("calls".to_string(), Value::Array(list)); }
-    }
-    if let Some(called_by) = idx.called_by_target.get(sid) {
-        let list = rel_list("called_by", called_by);
-        if !list.is_empty() { rels.insert("called_by".to_string(), Value::Array(list)); }
-    }
-    if let Some(bases) = idx.bases_by_derived.get(sid) {
-        let list = rel_list("derives_from", bases);
-        if !list.is_empty() { rels.insert("derives_from".to_string(), Value::Array(list)); }
-    }
-    if let Some(ovs) = idx.overrides_by_method.get(sid) {
-        let list = rel_list("overrides", ovs);
-        if !list.is_empty() { rels.insert("overrides".to_string(), Value::Array(list)); }
-    }
-    if let Some(cont) = idx.contains_by_parent.get(sid) {
-        let list = rel_list("contains", cont);
-        if !list.is_empty() { rels.insert("contains".to_string(), Value::Array(list)); }
-    }
-
-    rels
 }
 
 // ---------------------------------------------------------------------------
@@ -446,7 +251,7 @@ pub fn doctor(build_dir: Option<&str>, src: Option<&str>) -> Value {
 mod tests {
     use super::*;
     use crate::test_support::{
-        ensure_test_build, EMIT_FROM_EVENTS_H, PARSE_CPP, TEST_BUILD_DIR,
+        ensure_test_build, PARSE_CPP, TEST_BUILD_DIR,
     };
 
     #[test]
@@ -525,64 +330,6 @@ mod tests {
         ensure_test_build();
         crate::index::load_index(TEST_BUILD_DIR, PARSE_CPP, None)
             .expect("failed to load index")
-    }
-
-    fn build_classes_index() -> crate::index::IndexData {
-        ensure_test_build();
-        crate::index::load_index(TEST_BUILD_DIR, EMIT_FROM_EVENTS_H, None)
-            .expect("failed to load index")
-    }
-
-    #[test]
-    fn test_resolve_symbol_basic() {
-        let idx = build_functions_index();
-        let mut req = serde_json::Map::new();
-        req.insert("name".to_string(), Value::String("Load".to_string()));
-        let result = tool_cpp_resolve_symbol(&idx, &req);
-        assert_eq!(result["status"], "ok");
-        assert_eq!(result["ambiguous"], true);
-        assert!(result["items"].as_array().unwrap().len() >= 3);
-    }
-
-    #[test]
-    fn test_resolve_symbol_missing_name() {
-        let idx = build_functions_index();
-        let req = serde_json::Map::new();
-        let result = tool_cpp_resolve_symbol(&idx, &req);
-        assert_eq!(result["status"], "error");
-    }
-
-    #[test]
-    fn test_resolve_symbol_not_found() {
-        let idx = build_functions_index();
-        let mut req = serde_json::Map::new();
-        req.insert("name".to_string(), Value::String("nonexistent_xyz".to_string()));
-        let result = tool_cpp_resolve_symbol(&idx, &req);
-        assert_eq!(result["status"], "ok");
-        assert_eq!(result["items"].as_array().unwrap().len(), 0);
-        assert_eq!(result["ambiguous"], false);
-    }
-
-    #[test]
-    fn test_resolve_symbol_with_entity_filter() {
-        let idx = build_functions_index();
-        let mut req = serde_json::Map::new();
-        req.insert("name".to_string(), Value::String("Load".to_string()));
-        req.insert("entity".to_string(), Value::String("function".to_string()));
-        let result = tool_cpp_resolve_symbol(&idx, &req);
-        for item in result["items"].as_array().unwrap() {
-            assert_eq!(item["entity"], "function");
-        }
-    }
-
-    #[test]
-    fn test_resolve_symbol_with_param_types() {
-        let idx = build_functions_index();
-        let mut req = serde_json::Map::new();
-        req.insert("name".to_string(), Value::String("Load".to_string()));
-        req.insert("param_types".to_string(), serde_json::json!(["const char *"]));
-        let result = tool_cpp_resolve_symbol(&idx, &req);
-        assert_eq!(result["items"].as_array().unwrap().len(), 1);
     }
 
     #[test]
@@ -706,66 +453,6 @@ mod tests {
         req.insert("entity".to_string(), Value::String("call".to_string()));
         let result = tool_cpp_semantic_query(&idx, &req);
         assert!(!result["items"].as_array().unwrap().is_empty());
-    }
-
-    #[test]
-    fn test_describe_symbol_found() {
-        let idx = build_functions_index();
-        let load_file = idx.symbols.iter()
-            .find(|e| e.name == "LoadFile" && e.entity == "function")
-            .unwrap();
-        let sid = load_file.symbol_id.clone();
-        let mut req = serde_json::Map::new();
-        req.insert("symbol_id".to_string(), Value::String(sid));
-        let result = tool_cpp_describe_symbol(&idx, &req);
-        assert_eq!(result["status"], "ok");
-        assert_eq!(result["item"]["name"], "LoadFile");
-    }
-
-    #[test]
-    fn test_describe_symbol_not_found() {
-        let idx = build_functions_index();
-        let mut req = serde_json::Map::new();
-        req.insert("symbol_id".to_string(), Value::String("nonexistent".to_string()));
-        let result = tool_cpp_describe_symbol(&idx, &req);
-        assert_eq!(result["warnings"][0]["code"], "NO_MATCH");
-    }
-
-    #[test]
-    fn test_describe_symbol_missing_id() {
-        let idx = build_functions_index();
-        let req = serde_json::Map::new();
-        let result = tool_cpp_describe_symbol(&idx, &req);
-        assert_eq!(result["status"], "error");
-    }
-
-    #[test]
-    fn test_describe_symbol_no_relations() {
-        let idx = build_functions_index();
-        let load = idx.symbols.iter()
-            .find(|e| e.name == "Load" && e.entity == "function")
-            .unwrap();
-        let sid = load.symbol_id.clone();
-        let mut req = serde_json::Map::new();
-        req.insert("symbol_id".to_string(), Value::String(sid));
-        req.insert("include_relations".to_string(), Value::Bool(false));
-        let result = tool_cpp_describe_symbol(&idx, &req);
-        assert!(result["item"]["relations"].is_null());
-    }
-
-    #[test]
-    fn test_describe_symbol_with_relations() {
-        let idx = build_classes_index();
-        let derived = idx.symbols.iter()
-            .find(|e| e.name == "EmitFromEvents" && e.entity == "class")
-            .unwrap();
-        let sid = derived.symbol_id.clone();
-        let mut req = serde_json::Map::new();
-        req.insert("symbol_id".to_string(), Value::String(sid));
-        let result = tool_cpp_describe_symbol(&idx, &req);
-        let rels = result["item"]["relations"].as_object().unwrap();
-        assert!(rels.contains_key("derives_from"));
-        assert!(rels.contains_key("contains"));
     }
 
     #[test]

@@ -239,21 +239,6 @@ class TestDedupeItems:
         assert srv.dedupe_items([]) == []
 
 
-class TestIsNoMatchDescribe:
-    def test_no_item(self):
-        assert srv.is_no_match_describe({}) is True
-
-    def test_item_with_name(self):
-        assert srv.is_no_match_describe({"item": {"name": "foo"}}) is False
-
-    def test_no_match_warning(self):
-        payload = {"item": {"name": ""}, "warnings": [{"code": "NO_MATCH", "message": "not found"}]}
-        assert srv.is_no_match_describe(payload) is True
-
-    def test_item_no_name(self):
-        assert srv.is_no_match_describe({"item": {}}) is True
-
-
 # ---------------------------------------------------------------------------
 # target_files_for_tool
 # ---------------------------------------------------------------------------
@@ -262,18 +247,6 @@ class TestTargetFilesForTool:
     def setup_method(self):
         self.all_files = ["/ws/a.cpp", "/ws/b.cpp"]
         self.ws = Path("/ws")
-
-    def test_resolve_symbol_with_file(self, tmp_path: Path):
-        f = tmp_path / "x.cpp"
-        f.write_text("")
-        files, is_dir = srv.target_files_for_tool("cpp_resolve_symbol", {"file": str(f)}, self.all_files, tmp_path)
-        assert files == [str(f.resolve())]
-        assert is_dir is False
-
-    def test_resolve_symbol_no_file(self):
-        files, is_dir = srv.target_files_for_tool("cpp_resolve_symbol", {}, self.all_files, self.ws)
-        assert files == self.all_files
-        assert is_dir is False
 
     def test_semantic_query_with_scope_file(self, tmp_path: Path):
         f = tmp_path / "y.cpp"
@@ -287,19 +260,6 @@ class TestTargetFilesForTool:
         assert files == self.all_files
         assert is_dir is False
 
-    def test_describe_symbol(self):
-        files, is_dir = srv.target_files_for_tool("cpp_describe_symbol", {"symbol_id": "s1"}, self.all_files, self.ws)
-        assert files == self.all_files
-        assert is_dir is False
-
-    def test_resolve_symbol_with_directory(self, tmp_path: Path):
-        d = tmp_path / "src"
-        d.mkdir()
-        all_files = [str(d / "a.cpp"), str(d / "b.cpp"), str(tmp_path / "other.cpp")]
-        files, is_dir = srv.target_files_for_tool("cpp_resolve_symbol", {"file": str(d)}, all_files, tmp_path)
-        assert files == [str(d / "a.cpp"), str(d / "b.cpp")]
-        assert is_dir is True
-
     def test_semantic_query_with_scope_directory(self, tmp_path: Path):
         d = tmp_path / "lib"
         d.mkdir()
@@ -311,7 +271,7 @@ class TestTargetFilesForTool:
     def test_directory_no_matching_files(self, tmp_path: Path):
         d = tmp_path / "empty_dir"
         d.mkdir()
-        files, is_dir = srv.target_files_for_tool("cpp_resolve_symbol", {"file": str(d)}, ["/other/a.cpp"], tmp_path)
+        files, is_dir = srv.target_files_for_tool("cpp_semantic_query", {"scope": {"path": str(d)}}, ["/other/a.cpp"], tmp_path)
         assert files == []
         assert is_dir is True
 
@@ -354,11 +314,6 @@ class TestStripDirScope:
         assert result == {"action": "list", "entity": "function"}
         assert "scope" not in result
 
-    def test_resolve_symbol_strips_file(self):
-        args = {"file": "dir", "name": "add"}
-        result = srv._strip_dir_scope(args, "cpp_resolve_symbol")
-        assert result == {"name": "add"}
-
     def test_does_not_mutate_original(self):
         args = {"action": "list", "scope": {"path": "dir"}}
         srv._strip_dir_scope(args, "cpp_semantic_query")
@@ -367,11 +322,6 @@ class TestStripDirScope:
     def test_no_scope_passthrough(self):
         args = {"action": "list", "entity": "function"}
         result = srv._strip_dir_scope(args, "cpp_semantic_query")
-        assert result == args
-
-    def test_describe_symbol_passthrough(self):
-        args = {"symbol_id": "s1"}
-        result = srv._strip_dir_scope(args, "cpp_describe_symbol")
         assert result == args
 
 
@@ -423,7 +373,7 @@ class TestNormalizeIncludeSourceFromFields:
 
     def test_non_semantic_query_passthrough(self):
         args = {"fields": ["source"]}
-        result = srv._normalize_include_source_from_fields("cpp_resolve_symbol", args)
+        result = srv._normalize_include_source_from_fields("other_cmd", args)
         assert result == args
 
 
@@ -435,7 +385,7 @@ class TestRunBackend:
     def test_success(self, tmp_path: Path):
         script = tmp_path / "backend.py"
         script.write_text('import sys, json; json.dump({"status": "ok", "items": []}, sys.stdout)')
-        result = srv.run_backend(script, str(tmp_path), "f.cpp", "cpp_resolve_symbol", {"name": "x"}, 10)
+        result = srv.run_backend(script, str(tmp_path), "f.cpp", "cpp_semantic_query", {"action": "list", "entity": "function"}, 10)
         assert result["status"] == "ok"
 
     def test_nonzero_exit(self, tmp_path: Path):
@@ -480,41 +430,13 @@ class TestRunBackend:
 
 class TestRouteToolCall:
     def test_no_files(self):
-        result = srv.route_tool_call(Path("x"), "bd", Path("/ws"), [], "cpp_resolve_symbol", {"name": "x"}, 10)
+        result = srv.route_tool_call(Path("x"), "bd", Path("/ws"), [], "cpp_semantic_query", {"action": "list", "entity": "function"}, 10)
         assert result["warnings"][0]["code"] == "NO_SOURCE_FILES"
 
     def test_no_target_files(self, tmp_path: Path):
         result = srv.route_tool_call(Path("x"), "bd", tmp_path, ["/ws/a.cpp"],
-                                     "cpp_resolve_symbol", {"file": str(tmp_path / "nonexistent.cpp")}, 10)
+                                     "cpp_semantic_query", {"action": "list", "entity": "function", "scope": {"path": str(tmp_path / "nonexistent.cpp")}}, 10)
         assert result["warnings"][0]["code"] == "NO_TARGET_FILES"
-
-    @mock.patch("mcp_server.run_backend")
-    def test_resolve_symbol_ok(self, mock_be):
-        mock_be.return_value = {"status": "ok", "items": [{"symbol_id": "s1", "name": "foo"}], "warnings": []}
-        result = srv.route_tool_call(Path("x"), "bd", Path("/ws"), ["/ws/a.cpp"],
-                                     "cpp_resolve_symbol", {"name": "foo", "limit": 5}, 10)
-        assert result["status"] == "ok"
-        assert result["result_kind"] == "resolve_symbol"
-        assert len(result["items"]) == 1
-
-    @mock.patch("mcp_server.run_backend")
-    def test_resolve_symbol_dedup_across_files(self, mock_be):
-        mock_be.side_effect = [
-            {"status": "ok", "items": [{"symbol_id": "s1"}], "warnings": []},
-            {"status": "ok", "items": [{"symbol_id": "s1"}], "warnings": []},
-        ]
-        result = srv.route_tool_call(Path("x"), "bd", Path("/ws"), ["/ws/a.cpp", "/ws/b.cpp"],
-                                     "cpp_resolve_symbol", {"name": "foo"}, 10)
-        assert len(result["items"]) == 1
-
-    @mock.patch("mcp_server.run_backend")
-    def test_resolve_symbol_truncation(self, mock_be):
-        mock_be.return_value = {"status": "ok", "items": [{"symbol_id": f"s{i}"} for i in range(50)], "warnings": []}
-        result = srv.route_tool_call(Path("x"), "bd", Path("/ws"), ["/ws/a.cpp"],
-                                     "cpp_resolve_symbol", {"name": "foo", "limit": 5}, 10)
-        assert len(result["items"]) == 5
-        assert result["page"]["truncated"] is True
-        assert result["page"]["next_cursor"] == "5"
 
     @mock.patch("mcp_server.run_backend")
     def test_semantic_query_list(self, mock_be):
@@ -569,49 +491,6 @@ class TestRouteToolCall:
                                      "cpp_semantic_query", {"action": "invalid_action", "entity": "function"}, 10)
         assert result["status"] == "error"
         assert result["warnings"][0]["code"] == "INVALID_REQUEST"
-
-    @mock.patch("mcp_server.run_backend")
-    def test_describe_symbol_found(self, mock_be):
-        mock_be.return_value = {"status": "ok", "item": {"symbol_id": "s1", "entity": "function", "name": "foo"}, "warnings": []}
-        result = srv.route_tool_call(Path("x"), "bd", Path("/ws"), ["/ws/a.cpp"],
-                                     "cpp_describe_symbol", {"symbol_id": "s1"}, 10)
-        assert result["item"]["name"] == "foo"
-
-    @mock.patch("mcp_server.run_backend")
-    def test_describe_symbol_not_found(self, mock_be):
-        mock_be.return_value = {"status": "ok", "item": {"symbol_id": "s1", "entity": "file", "name": ""},
-                                "warnings": [{"code": "NO_MATCH", "message": "not found"}]}
-        result = srv.route_tool_call(Path("x"), "bd", Path("/ws"), ["/ws/a.cpp"],
-                                     "cpp_describe_symbol", {"symbol_id": "s1"}, 10)
-        assert any(w["code"] == "NO_MATCH" for w in result["warnings"])
-
-    @mock.patch("mcp_server.run_backend")
-    def test_describe_symbol_skips_errors(self, mock_be):
-        mock_be.side_effect = [
-            {"status": "error", "warnings": [{"code": "BACKEND_ERROR", "message": "fail"}]},
-            {"status": "ok", "item": {"symbol_id": "s1", "entity": "function", "name": "bar"}, "warnings": []},
-        ]
-        result = srv.route_tool_call(Path("x"), "bd", Path("/ws"), ["/ws/a.cpp", "/ws/b.cpp"],
-                                     "cpp_describe_symbol", {"symbol_id": "s1"}, 10)
-        assert result["item"]["name"] == "bar"
-
-    @mock.patch("mcp_server.run_backend")
-    def test_resolve_error_then_ok(self, mock_be):
-        mock_be.side_effect = [
-            {"status": "error", "warnings": [{"code": "BACKEND_ERROR", "message": "fail"}]},
-            {"status": "ok", "items": [{"symbol_id": "s1"}], "warnings": []},
-        ]
-        result = srv.route_tool_call(Path("x"), "bd", Path("/ws"), ["/ws/a.cpp", "/ws/b.cpp"],
-                                     "cpp_resolve_symbol", {"name": "foo"}, 10)
-        assert result["status"] == "ok"
-        assert len(result["items"]) == 1
-
-    @mock.patch("mcp_server.run_backend")
-    def test_resolve_all_errors(self, mock_be):
-        mock_be.return_value = {"status": "error", "warnings": [{"code": "BACKEND_ERROR", "message": "fail"}]}
-        result = srv.route_tool_call(Path("x"), "bd", Path("/ws"), ["/ws/a.cpp"],
-                                     "cpp_resolve_symbol", {"name": "foo"}, 10)
-        assert result["status"] == "error"
 
     @mock.patch("mcp_server.run_backend")
     def test_semantic_count_all_errors(self, mock_be):
@@ -726,7 +605,7 @@ class TestProtocolIntegration:
 
     @pytest.fixture
     def server(self):
-        tool_defs = [{"name": "cpp_resolve_symbol", "description": "resolve", "inputSchema": {"type": "object"}}]
+        tool_defs = [{"name": "cpp_semantic_query", "description": "query", "inputSchema": {"type": "object"}}]
         return srv.create_server(tool_defs, Path("clang_mcp.py"), Path("/workspace"), None, 10)
 
     def _run_session(self, server, requests: list[dict], delay: float = 0.1, timeout: float = 1.0) -> list[dict]:
@@ -773,13 +652,13 @@ class TestProtocolIntegration:
         # tools/list response
         tools_resp = next(r for r in responses if r.get("id") == 2)
         assert len(tools_resp["result"]["tools"]) == 1
-        assert tools_resp["result"]["tools"][0]["name"] == "cpp_resolve_symbol"
+        assert tools_resp["result"]["tools"][0]["name"] == "cpp_semantic_query"
 
     @mock.patch("mcp_server.resolve_runtime_context")
     @mock.patch("mcp_server.route_tool_call")
     def test_tool_call(self, mock_route, mock_ctx, server):
         mock_ctx.return_value = ("/workspace/build", ["/workspace/samples/cpp/functions.cpp"])
-        mock_route.return_value = {"status": "ok", "result_kind": "resolve_symbol",
+        mock_route.return_value = {"status": "ok", "result_kind": "list",
                                    "items": [{"symbol_id": "s1"}], "warnings": [],
                                    "page": {"next_cursor": None, "truncated": False, "total_matches": 1}}
         responses = self._run_session(server, [
@@ -788,7 +667,7 @@ class TestProtocolIntegration:
                         "clientInfo": {"name": "test", "version": "1.0"}}},
             {"jsonrpc": "2.0", "method": "notifications/initialized"},
             {"jsonrpc": "2.0", "id": 3, "method": "tools/call",
-             "params": {"name": "cpp_resolve_symbol", "arguments": {"name": "foo"}}},
+             "params": {"name": "cpp_semantic_query", "arguments": {"action": "list", "entity": "function"}}},
         ], timeout=1.5)
         call_resp = next((r for r in responses if r.get("id") == 3), None)
         assert call_resp is not None
@@ -816,7 +695,7 @@ class TestProtocolIntegration:
                         "clientInfo": {"name": "test", "version": "1.0"}}},
             {"jsonrpc": "2.0", "method": "notifications/initialized"},
             {"jsonrpc": "2.0", "id": 2, "method": "tools/call",
-             "params": {"name": "cpp_resolve_symbol", "arguments": {"name": "foo"}}},
+             "params": {"name": "cpp_semantic_query", "arguments": {"action": "list", "entity": "function"}}},
         ], timeout=1.5)
         call_resp = next((r for r in responses if r.get("id") == 2), None)
         assert call_resp is not None

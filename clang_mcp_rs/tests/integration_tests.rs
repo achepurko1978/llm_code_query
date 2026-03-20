@@ -7,7 +7,6 @@ use std::sync::OnceLock;
 const BUILD_DIR: &str = "/workspace/samples/cpp/build-rust-tests";
 const PARSE_CPP: &str = "/workspace/samples/cpp/src/parse.cpp";
 const NODE_H: &str = "/workspace/samples/cpp/include/yaml-cpp/node/node.h";
-const EXCEPTIONS_H: &str = "/workspace/samples/cpp/include/yaml-cpp/exceptions.h";
 const EMIT_FROM_EVENTS_H: &str = "/workspace/samples/cpp/include/yaml-cpp/emitfromevents.h";
 
 fn ensure_fixture() {
@@ -73,14 +72,6 @@ fn run_tool_json(file: &str, tool: &str, request_json: &str) -> Value {
     serde_json::from_slice(&output.stdout).expect("invalid JSON output")
 }
 
-fn find_symbol_id(file: &str, name: &str, entity: &str) -> String {
-    let req = format!(r#"{{"name":"{name}","entity":"{entity}"}}"#);
-    let v = run_tool_json(file, "cpp_resolve_symbol", &req);
-    let items = v["items"].as_array().expect("items is not an array");
-    let item = items.iter().find(|i| i["name"] == name).expect("symbol not found");
-    item["symbol_id"].as_str().expect("missing symbol_id").to_string()
-}
-
 #[test]
 fn test_doctor_ok() {
     ensure_fixture();
@@ -100,23 +91,6 @@ fn test_doctor_ok() {
     let v: Value = serde_json::from_slice(&output.stdout).unwrap();
     assert_eq!(v["status"], "ok");
     assert_eq!(v["ok"], true);
-}
-
-#[test]
-fn test_resolve_symbol_ambiguous_load() {
-    let v = run_tool_json(PARSE_CPP, "cpp_resolve_symbol", r#"{"name":"Load"}"#);
-    assert_eq!(v["status"], "ok");
-    assert_eq!(v["ambiguous"], true);
-    let items = v["items"].as_array().unwrap();
-    assert!(items.len() >= 3);
-    assert!(items.iter().all(|i| i["entity"] == "function"));
-}
-
-#[test]
-fn test_resolve_symbol_missing_name_error() {
-    let v = run_tool_json(PARSE_CPP, "cpp_resolve_symbol", "{}");
-    assert_eq!(v["status"], "error");
-    assert_eq!(v["warnings"][0]["code"], "INVALID_REQUEST");
 }
 
 #[test]
@@ -219,27 +193,6 @@ fn test_semantic_query_call_name_filter() {
 }
 
 #[test]
-fn test_describe_symbol_found_not_found_and_source() {
-    let sid = find_symbol_id(PARSE_CPP, "LoadFile", "function");
-    let describe_req = format!(
-        r#"{{"symbol_id":"{sid}","include_relations":true,"include_source":true}}"#
-    );
-    let v = run_tool_json(PARSE_CPP, "cpp_describe_symbol", &describe_req);
-    assert_eq!(v["status"], "ok");
-    assert_eq!(v["item"]["name"], "LoadFile");
-    assert!(v["item"]["relations"]["calls"].is_array());
-    assert!(v["item"]["source"].as_str().unwrap_or("").contains("LoadFile"));
-
-    let missing = run_tool_json(
-        PARSE_CPP,
-        "cpp_describe_symbol",
-        r#"{"symbol_id":"missing.symbol.id"}"#,
-    );
-    assert_eq!(missing["status"], "ok");
-    assert_eq!(missing["warnings"][0]["code"], "NO_MATCH");
-}
-
-#[test]
 fn test_header_queries_node_and_emitfromevents() {
     let node_classes = run_tool_json(
         NODE_H,
@@ -263,18 +216,6 @@ fn test_header_queries_node_and_emitfromevents() {
     );
     assert_eq!(overrides["status"], "ok");
     assert_eq!(overrides["exists"], true);
-}
-
-#[test]
-fn test_header_inheritance_describe() {
-    let v = run_tool_json(
-        EXCEPTIONS_H,
-        "cpp_describe_symbol",
-        r#"{"symbol_id":"c:@N@YAML@S@BadConversion"}"#,
-    );
-    assert_eq!(v["status"], "ok");
-    assert_eq!(v["item"]["name"], "BadConversion");
-    assert!(v["item"]["relations"]["derives_from"].is_array());
 }
 
 #[test]
@@ -309,7 +250,7 @@ fn test_request_file_not_found_exits_nonzero() {
             BUILD_DIR,
             "--file",
             PARSE_CPP,
-            "cpp_resolve_symbol",
+            "cpp_semantic_query",
             "--request-file",
             "/nonexistent/file.json",
         ])

@@ -4,7 +4,7 @@
 
 ## Quick Start
 
-Show all 14 copy-paste commands:
+Show all copy-paste commands:
 ```bash
 bash /workspace/samples/cli_examples/cli.sh
 ```
@@ -28,13 +28,10 @@ Just copy the command → paste into terminal:
 /workspace/clang_mcp_rs/target/debug/clang_mcp --build-dir /workspace/samples/cpp/build-rust-tests --file /workspace/samples/cpp/src/parse.cpp doctor
 ```
 
-All 14 commands work the same way.
-
 ## Commands
 
-- **1-4**: Various `doctor` and `cpp_resolve_symbol` examples
-- **5-12**: `cpp_semantic_query` examples (list, count, exists, find)
-- **13-14**: `cpp_describe_symbol` examples
+- **1**: `doctor` health check
+- **2-9**: `cpp_semantic_query` examples (list, count, exists, find)
 
 ## Validation
 
@@ -43,11 +40,9 @@ Verify all examples still work:
 bash /workspace/samples/cli_examples/cli.sh validate
 ```
 
-Expected: `Results: 14 passed, 0 failed`
-
 ## Files
 
-- **cli.sh** — Main script with 14 copy-paste commands + validation
+- **cli.sh** — Main script with copy-paste commands + validation
 - **validate.py** — Python validator (for regression testing)
 - **regenerate_golden.sh** — Refresh golden outputs after changes
-- **expected/** — 14 golden JSON snapshots (for validation)
+- **expected/** — Golden JSON snapshots (for validation)

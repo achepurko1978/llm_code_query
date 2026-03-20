@@ -16,7 +16,7 @@ Defaults:
 Examples:
     mcp_raw_tool_call.sh
     mcp_raw_tool_call.sh cpp_semantic_query '{"action":"list","entity":"function","scope":{"path":"samples/cpp/src/parse.cpp"},"where":{"name":"Load"},"limit":5}'
-    mcp_raw_tool_call.sh /workspace /workspace/samples/cpp/build-rust-tests /workspace/clang_mcp_rs/target/release/clang_mcp cpp_resolve_symbol '{"name":"Load"}'
+    mcp_raw_tool_call.sh /workspace /workspace/samples/cpp/build-rust-tests /workspace/clang_mcp_rs/target/release/clang_mcp cpp_semantic_query '{"action":"list","entity":"function","scope":{"path":"samples/cpp/src/parse.cpp"}}'
     mcp_raw_tool_call.sh /workspace /workspace/samples/cpp/build-rust-tests /workspace/clang_mcp_rs/target/release/clang_mcp cpp_semantic_query @/workspace/request.json
 EOF
     exit 0
@@ -24,7 +24,7 @@ fi
 
 is_tool_name() {
     case "$1" in
-        cpp_resolve_symbol|cpp_semantic_query|cpp_describe_symbol) return 0 ;;
+        cpp_semantic_query) return 0 ;;
         *) return 1 ;;
     esac
 }

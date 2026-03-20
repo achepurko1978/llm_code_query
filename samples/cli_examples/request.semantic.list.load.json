@@ -2,15 +2,13 @@
   "action": "list",
   "entity": "method",
   "scope": {
-    "path": "samples/cpp/src"
+    "path": "samples/cpp/src/emitfromevents.cpp"
   },
   "where": {
-    "return_type": "std::string"
+    "return_type": "void"
   },
   "fields": [
     "symbol_id",
-    "extent",
-    "source",
     "location"
   ]
 }

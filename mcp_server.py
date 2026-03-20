@@ -24,7 +24,7 @@ SERVER_VERSION = "0.1.0"
 
 logger = logging.getLogger(SERVER_NAME)
 
-VALID_TOOLS = frozenset({"cpp_resolve_symbol", "cpp_semantic_query", "cpp_describe_symbol"})
+VALID_TOOLS = frozenset({"cpp_semantic_query"})
 VALID_ACTIONS = frozenset({"find", "list", "count", "exists"})
 CPP_EXTENSIONS = frozenset({".c", ".cc", ".cpp", ".cxx", ".h", ".hh", ".hpp", ".hxx"})
 
@@ -223,15 +223,6 @@ def dedupe_items(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return out
 
 
-def is_no_match_describe(payload: dict[str, Any]) -> bool:
-    item = payload.get("item")
-    if not isinstance(item, dict):
-        return True
-    if item.get("name"):
-        return False
-    return True
-
-
 # ---------------------------------------------------------------------------
 # Tool routing
 # ---------------------------------------------------------------------------
@@ -245,9 +236,7 @@ def target_files_for_tool(cmd: str, call_args: dict[str, Any], all_files: list[s
                           workspace_root: Path) -> tuple[list[str], bool]:
     """Return (target_files, scope_was_directory_or_glob)."""
     path_str: str | None = None
-    if cmd == "cpp_resolve_symbol":
-        path_str = call_args.get("file")
-    elif cmd == "cpp_semantic_query":
+    if cmd == "cpp_semantic_query":
         scope = call_args.get("scope")
         if isinstance(scope, dict):
             path_str = scope.get("path")
@@ -278,8 +267,6 @@ def _strip_dir_scope(call_args: dict[str, Any], cmd: str) -> dict[str, Any]:
                 args["scope"] = new_scope
             else:
                 del args["scope"]
-    elif cmd == "cpp_resolve_symbol" and "file" in args:
-        del args["file"]
     return args
 
 
@@ -349,59 +336,30 @@ def route_tool_call(clang_script: Path, build_dir: str, workspace_root: Path,
     if dir_scope:
         call_args = _strip_dir_scope(call_args, cmd)
 
-    if cmd == "cpp_resolve_symbol":
+    # cpp_semantic_query
+    action = call_args.get("action")
+    if action not in VALID_ACTIONS:
+        return {"status": "error", "result_kind": "list",
+                "warnings": [{"code": "INVALID_REQUEST", "message": "action must be one of find|list|count|exists"}],
+                "items": [], "page": {"next_cursor": None, "truncated": False, "total_matches": 0}}
+
+    if action in ("find", "list"):
         requested_limit = parse_int(call_args.get("limit", 5000), 5000, 1, 50000)
+        requested_cursor = parse_cursor(call_args.get("cursor"))
+        req = {k: v for k, v in call_args.items() if k != "cursor"}
         all_items, all_warnings, had_error = _aggregate_backends(
-            clang_script, build_dir, workspace_root, targets, cmd, call_args, timeout_sec)
+            clang_script, build_dir, workspace_root, targets, cmd, req, timeout_sec)
         items = dedupe_items(all_items)
         total = len(items)
-        out_items = items[:requested_limit]
-        truncated = requested_limit < total
-        return {
-            "status": "error" if had_error and not out_items else "ok",
-            "result_kind": "resolve_symbol", "ambiguous": total > 1,
-            "items": out_items, "warnings": all_warnings,
-            "page": {"next_cursor": str(requested_limit) if truncated else None, "truncated": truncated, "total_matches": total},
-        }
+        sliced = items[requested_cursor:requested_cursor + requested_limit]
+        next_cursor = requested_cursor + len(sliced)
+        truncated = next_cursor < total
+        return {"status": "error" if had_error and not sliced else "ok", "result_kind": action,
+                "items": sliced, "warnings": all_warnings,
+                "page": {"next_cursor": str(next_cursor) if truncated else None, "truncated": truncated, "total_matches": total}}
 
-    if cmd == "cpp_semantic_query":
-        action = call_args.get("action")
-        if action not in VALID_ACTIONS:
-            return {"status": "error", "result_kind": "list",
-                    "warnings": [{"code": "INVALID_REQUEST", "message": "action must be one of find|list|count|exists"}],
-                    "items": [], "page": {"next_cursor": None, "truncated": False, "total_matches": 0}}
-
-        if action in ("find", "list"):
-            requested_limit = parse_int(call_args.get("limit", 5000), 5000, 1, 50000)
-            requested_cursor = parse_cursor(call_args.get("cursor"))
-            req = {k: v for k, v in call_args.items() if k != "cursor"}
-            all_items, all_warnings, had_error = _aggregate_backends(
-                clang_script, build_dir, workspace_root, targets, cmd, req, timeout_sec)
-            items = dedupe_items(all_items)
-            total = len(items)
-            sliced = items[requested_cursor:requested_cursor + requested_limit]
-            next_cursor = requested_cursor + len(sliced)
-            truncated = next_cursor < total
-            return {"status": "error" if had_error and not sliced else "ok", "result_kind": action,
-                    "items": sliced, "warnings": all_warnings,
-                    "page": {"next_cursor": str(next_cursor) if truncated else None, "truncated": truncated, "total_matches": total}}
-
-        if action == "count":
-            total = 0
-            all_warnings: list[dict[str, Any]] = []
-            had_error = False
-            for src in targets:
-                payload = run_backend(clang_script, build_dir, src, cmd, call_args, timeout_sec, str(workspace_root))
-                if payload.get("status") == "error":
-                    had_error = True
-                    all_warnings.extend(payload.get("warnings", []))
-                    continue
-                total += int(payload.get("count", 0))
-                all_warnings.extend(payload.get("warnings", []))
-            return {"status": "error" if had_error and total == 0 else "ok", "result_kind": "count", "count": total, "warnings": all_warnings}
-
-        # exists
-        exists = False
+    if action == "count":
+        total = 0
         all_warnings: list[dict[str, Any]] = []
         had_error = False
         for src in targets:
@@ -410,25 +368,23 @@ def route_tool_call(clang_script: Path, build_dir: str, workspace_root: Path,
                 had_error = True
                 all_warnings.extend(payload.get("warnings", []))
                 continue
-            exists = exists or bool(payload.get("exists", False))
+            total += int(payload.get("count", 0))
             all_warnings.extend(payload.get("warnings", []))
-        return {"status": "error" if had_error and not exists else "ok", "result_kind": "exists", "exists": exists, "warnings": all_warnings}
+        return {"status": "error" if had_error and total == 0 else "ok", "result_kind": "count", "count": total, "warnings": all_warnings}
 
-    # cpp_describe_symbol
-    sid = str(call_args.get("symbol_id", ""))
-    last_no_match: dict[str, Any] = {
-        "status": "ok", "result_kind": "describe_symbol",
-        "item": {"symbol_id": sid, "entity": "file", "name": ""},
-        "warnings": [{"code": "NO_MATCH", "message": f"symbol not found: {sid}"}],
-    }
+    # exists
+    exists = False
+    all_warnings: list[dict[str, Any]] = []
+    had_error = False
     for src in targets:
-        payload = run_backend(clang_script, build_dir, src, "cpp_describe_symbol", call_args, timeout_sec, str(workspace_root))
+        payload = run_backend(clang_script, build_dir, src, cmd, call_args, timeout_sec, str(workspace_root))
         if payload.get("status") == "error":
+            had_error = True
+            all_warnings.extend(payload.get("warnings", []))
             continue
-        if not is_no_match_describe(payload):
-            return payload
-        last_no_match = payload
-    return last_no_match
+        exists = exists or bool(payload.get("exists", False))
+        all_warnings.extend(payload.get("warnings", []))
+    return {"status": "error" if had_error and not exists else "ok", "result_kind": "exists", "exists": exists, "warnings": all_warnings}
 
 
 # ---------------------------------------------------------------------------

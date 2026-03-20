@@ -416,84 +416,6 @@
         "warnings"
       ]
     },
-    "CppResolveSymbolRequest": {
-      "type": "object",
-      "additionalProperties": false,
-      "properties": {
-        "name": {
-          "type": "string"
-        },
-        "entity": {
-          "$ref": "#/$defs/Entity"
-        },
-        "qualified_name": {
-          "type": "string"
-        },
-        "file": {
-          "type": "string"
-        },
-        "param_types": {
-          "type": "array",
-          "items": {
-            "type": "string"
-          }
-        },
-        "limit": {
-          "type": "integer",
-          "minimum": 1,
-          "maximum": 50000,
-          "default": 5000
-        }
-      },
-      "required": [
-        "name"
-      ]
-    },
-    "CppResolveSymbolResponse": {
-      "allOf": [
-        {
-          "$ref": "#/$defs/BaseResponse"
-        },
-        {
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {
-            "status": {
-              "$ref": "#/$defs/Status"
-            },
-            "result_kind": {
-              "const": "resolve_symbol"
-            },
-            "ambiguous": {
-              "type": "boolean"
-            },
-            "items": {
-              "type": "array",
-              "items": {
-                "$ref": "#/$defs/SymbolSummary"
-              }
-            },
-            "warnings": {
-              "type": "array",
-              "items": {
-                "$ref": "#/$defs/Warning"
-              }
-            },
-            "page": {
-              "$ref": "#/$defs/Page"
-            }
-          },
-          "required": [
-            "status",
-            "result_kind",
-            "ambiguous",
-            "items",
-            "warnings",
-            "page"
-          ]
-        }
-      ]
-    },
     "CppSemanticQueryRequest": {
       "type": "object",
       "additionalProperties": false,
@@ -547,7 +469,7 @@
               "extent"
             ]
           },
-          "description": "Optional subset of fields to include per result item. Only the requested fields are returned. Include \"symbol_id\" if you need to pass results to cpp_describe_symbol. Omitting this returns all fields. For listing method names use: [\"qualified_name\", \"signature\", \"access\"]. Important: this method listing excludes constructors/destructors; query entity=constructor and entity=destructor separately and merge if you want all member functions. For follow-up describe calls use: [\"symbol_id\", \"qualified_name\", \"signature\", \"access\"]."
+          "description": "Optional subset of fields to include per result item. Only the requested fields are returned. Omitting this returns all fields. For listing method names use: [\"qualified_name\", \"signature\", \"access\"]. Important: this method listing excludes constructors/destructors; query entity=constructor and entity=destructor separately and merge if you want all member functions."
         },
         "include_source": {
           "type": "boolean",
@@ -659,67 +581,6 @@
                 ]
               }
             }
-          ]
-        }
-      ]
-    },
-    "CppDescribeSymbolRequest": {
-      "type": "object",
-      "additionalProperties": false,
-      "properties": {
-        "symbol_id": {
-          "type": "string"
-        },
-        "include_relations": {
-          "type": "boolean",
-          "default": true
-        },
-        "relation_limit": {
-          "type": "integer",
-          "minimum": 0,
-          "maximum": 50000,
-          "default": 5000
-        },
-        "include_source": {
-          "type": "boolean",
-          "default": false,
-          "description": "When true, the response item includes a 'source' field with the full source text and an 'extent' field with start_line/end_line."
-        }
-      },
-      "required": [
-        "symbol_id"
-      ]
-    },
-    "CppDescribeSymbolResponse": {
-      "allOf": [
-        {
-          "$ref": "#/$defs/BaseResponse"
-        },
-        {
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {
-            "status": {
-              "$ref": "#/$defs/Status"
-            },
-            "result_kind": {
-              "const": "describe_symbol"
-            },
-            "item": {
-              "$ref": "#/$defs/SymbolSummary"
-            },
-            "warnings": {
-              "type": "array",
-              "items": {
-                "$ref": "#/$defs/Warning"
-              }
-            }
-          },
-          "required": [
-            "status",
-            "result_kind",
-            "item",
-            "warnings"
           ]
         }
       ]
