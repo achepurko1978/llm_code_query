@@ -101,20 +101,20 @@ Preferred flow:
 
 ## Scope-first pattern
 
-Use this when the user asks for things "inside" a function or class.
+Use this when the user asks for things "inside" a file, directory, or matching a glob pattern.
 
 Examples:
 
-- calls inside `main`
-- declarations inside `parse_config`
-- fields inside `Widget`
-- methods inside `Base`
+- all functions in `src/parse.cpp`
+- methods in all headers: `include/*.h`
+- symbols in a directory: `src/`
 
 Preferred flow:
 
-1. resolve the scope symbol if needed
-2. pass the scope in the `scope` parameter
-3. add `where` filters only for the specific thing being searched
+1. use `scope.path` with a file path, directory, or glob
+2. add `where` filters for the specific thing being searched
+
+Note: `scope.inside_class`, `scope.inside_function`, and `scope.in_namespace` are **not implemented** (silently ignored). To find items in a specific class or function, scope to the file and filter by `qualified_name` prefix client-side.
 
 ## Narrow-then-relate pattern
 
@@ -161,30 +161,48 @@ Common entities include:
 
 ## Relations
 
-Common relations include:
+Relation filters are accessed through `where.relations`:
 
 - `derives_from`
 - `overrides`
 - `calls`
 - `called_by`
-- `inside_function`
-- `inside_class`
-- `in_namespace`
+
+Usage: `"where": {"relations": {"derives_from": "QualifiedName"}}`
+
+**Not implemented (silently ignored):**
+
+- `scope.inside_function` — use `scope.path` to narrow to a file, then filter client-side
+- `scope.inside_class` — same workaround
+- `scope.in_namespace` — same workaround
 
 ## Filters
 
-Common filter fields include:
+Supported `where` filter keys (multiple flat keys are AND'd together):
 
-- `name`
-- `qualified_name`
-- `return_type`
-- `type`
-- `param_types`
-- `static`
-- `const`
-- `virtual`
-- `override`
-- `access`
+- `name` — exact string match
+- `qualified_name` — exact string match
+- `return_type` — exact string match
+- `type` — exact string match
+- `access` — `"public"`, `"protected"`, `"private"`
+- `static` — boolean
+- `const` — boolean
+- `virtual` — boolean
+- `override` — boolean
+- `deleted` — boolean
+- `defaulted` — boolean
+- `implicit` — boolean
+- `param_types` — exact array match (e.g. `["int", "const std::string &"]`)
+- `any_of` — array of sub-conditions, at least one must match
+- `relations` — object with relation keys (`derives_from`, `overrides`, `calls`, `called_by`)
+
+**Not implemented (silently ignored):**
+
+- `all_of` — use flat keys instead (they are AND'd automatically)
+- `not` — filter client-side or restructure the query
+- Top-level `derives_from`, `calls`, `overrides`, `called_by` — must be nested under `relations`
+- `contains`
+- Regex/pattern matching in values
 
 # Preferred output discipline
 
@@ -251,12 +269,16 @@ Over:
 
 Use `where` for:
 
-- exact filters
-- boolean combinations
-- relation disjunctions
-- narrowing by access, qualifiers, types, names, files
+- exact value filters (name, return_type, access, type, etc.)
+- boolean flag filters (static, const, virtual, override)
+- `any_of` disjunctions
+- `relations` for inheritance, call, and override relationships
+- `param_types` for exact parameter type matching
 
-Do not use `where` for narrative instructions or natural language descriptions.
+Do not use `where` for:
+- narrative instructions or natural language descriptions
+- file paths (use `scope.path` instead)
+- `all_of` or `not` (silently ignored)
 
 ## Use `any_of` when the code could express the same intent in multiple ways
 
@@ -267,13 +289,17 @@ Examples:
 - direct name vs qualified name
 - multiple candidate target symbols
 
-## Use `all_of` when every condition must hold
+## Use flat keys for AND conditions
 
-Examples:
+Multiple keys in a `where` object are automatically AND'd:
 
-- method AND const AND public
-- field AND static AND private
-- call AND inside function AND calls exact symbol
+```json
+{"access": "public", "const": true, "return_type": "std::string"}
+```
+
+This matches symbols that are public AND const AND return std::string.
+
+Do NOT use `all_of` — it is silently ignored. Use flat keys instead.
 
 ## Prefer `count` and `exists` when possible
 
@@ -324,14 +350,14 @@ Response will contain `source` and `extent` fields on the item.
 
 Each item in the response will contain `source` and `extent` fields.
 
-## C. List methods of a class
+## C. List methods in a file
 
 ```json
 {
   "action": "list",
   "entity": "method",
   "scope": {
-    "inside_class": "MyClass"
+    "path": "src/widget.cpp"
   },
   "fields": [
     "symbol_id",
@@ -347,14 +373,16 @@ Each item in the response will contain `source` and `extent` fields.
 }
 ```
 
-## D. Count virtual methods in a class
+Note: `scope.inside_class` is not yet implemented. To find methods of a specific class, list methods in the file where the class is defined and filter by `qualified_name` prefix client-side.
+
+## D. Count virtual methods in a file
 
 ```json
 {
   "action": "count",
   "entity": "method",
   "scope": {
-    "inside_class": "MyClass"
+    "path": "src/widget.cpp"
   },
   "where": {
     "virtual": true
@@ -362,110 +390,107 @@ Each item in the response will contain `source` and `extent` fields.
 }
 ```
 
-## E. Check whether a class has a virtual destructor
+## E. Check whether a virtual destructor exists
 
 ```json
 {
   "action": "exists",
-  "entity": "method",
+  "entity": "destructor",
   "scope": {
-    "inside_class": "MyClass"
+    "path": "src/widget.cpp"
   },
   "where": {
-    "all_of": [
-      { "name": "~MyClass" },
-      { "virtual": true }
-    ]
+    "virtual": true
   }
 }
 ```
 
 # Complex `where` queries
 
-These examples demonstrate how to express typical real-world tasks.
+These examples demonstrate how to express typical real-world tasks using
+the **actually implemented** backend features.
 
-Note: the exact accepted shape depends on the MCP schema implemented by the server. Use the patterns below and keep the structure regular.
+**Supported `where` composition:**
+- Multiple flat keys in one `where` object are AND'd automatically
+- `any_of` array — at least one sub-condition must match
+- `relations` object — with `derives_from`, `overrides`, `calls`, `called_by`
+- `param_types` array — exact match
+
+**Not supported (silently ignored):**
+- `all_of` — use flat keys instead
+- `not` — filter client-side
+- Top-level `derives_from`, `calls`, `overrides`, `called_by` outside `relations`
+- `scope.inside_function`, `scope.inside_class`, `scope.in_namespace`
+- Regex or pattern matching in values
+- `contains`
 
 ---
 
-## 1) Find every call to `add` inside `main`
+## 1) Find calls to `add` in a specific file
 
-If possible, resolve `main` first, and resolve `add` first.
+Since `scope.inside_function` is not implemented, scope to a file instead.
 
-Then query:
-
-```json
-{
-  "action": "find",
-  "entity": "call",
-  "scope": {
-    "inside_function": "main"
-  },
-  "where": {
-    "any_of": [
-      {
-        "calls": {
-          "name": "add",
-          "entity": "function"
-        }
-      },
-      {
-        "calls": {
-          "name": "add",
-          "entity": "method"
-        }
-      }
-    ]
-  },
-  "fields": [
-    "symbol_id",
-    "qualified_name",
-    "location",
-    "source_excerpt"
-  ]
-}
-```
-
-If an exact resolved target is available, prefer:
+Resolve `add` first, then use `relations.calls`:
 
 ```json
 {
   "action": "find",
   "entity": "call",
   "scope": {
-    "inside_function": "main"
+    "path": "src/main.cpp"
   },
   "where": {
-    "calls": {
-      "symbol_id": "resolved-add-symbol-id"
+    "relations": {
+      "calls": "YAML::Qualified::add"
     }
   },
   "fields": [
     "symbol_id",
     "qualified_name",
-    "location",
-    "source_excerpt"
+    "location"
+  ]
+}
+```
+
+If the exact symbol_id is known from `cpp_resolve_symbol`:
+
+```json
+{
+  "action": "find",
+  "entity": "call",
+  "scope": {
+    "path": "src/main.cpp"
+  },
+  "where": {
+    "relations": {
+      "calls": "c:@N@ns@F@add#I#I#"
+    }
+  },
+  "fields": [
+    "symbol_id",
+    "qualified_name",
+    "location"
   ]
 }
 ```
 
 ---
 
-## 2) Find all public const methods of `Widget` returning `std::string`
+## 2) Find all public const methods returning `std::string` in a file
+
+Use flat keys — they are AND'd automatically:
 
 ```json
 {
   "action": "find",
   "entity": "method",
   "scope": {
-    "inside_class": "Widget"
+    "path": "src/widget.cpp"
   },
   "where": {
-    "all_of": [
-      { "access": "public" },
-      { "const": true },
-      { "return_type": "std::string" }
-    ]
+    "access": "public",
+    "const": true,
+    "return_type": "std::string"
   },
   "fields": [
     "symbol_id",
@@ -482,14 +507,14 @@ If an exact resolved target is available, prefer:
 
 ---
 
-## 3) Find all methods of `Derived` that override something
+## 3) Find all override methods in a file
 
 ```json
 {
   "action": "find",
   "entity": "method",
   "scope": {
-    "inside_class": "Derived"
+    "path": "src/derived.cpp"
   },
   "where": {
     "override": true
@@ -504,34 +529,22 @@ If an exact resolved target is available, prefer:
 }
 ```
 
-If relation form is supported more robustly than the boolean flag, prefer:
-
-```json
-{
-  "action": "find",
-  "entity": "method",
-  "scope": {
-    "inside_class": "Derived"
-  },
-  "where": {
-    "overrides": {
-      "exists": true
-    }
-  }
-}
-```
-
 ---
 
-## 4) Find all classes deriving from `Base`
+## 4) Find all classes deriving from a base class
+
+Use the `relations` wrapper with the base class qualified name or symbol_id:
 
 ```json
 {
   "action": "find",
   "entity": "class",
+  "scope": {
+    "path": "include/yaml-cpp/exceptions.h"
+  },
   "where": {
-    "derives_from": {
-      "name": "Base"
+    "relations": {
+      "derives_from": "YAML::Exception"
     }
   },
   "fields": [
@@ -542,42 +555,21 @@ If relation form is supported more robustly than the boolean flag, prefer:
 }
 ```
 
-Prefer exact symbol target if resolved:
-
-```json
-{
-  "action": "find",
-  "entity": "class",
-  "where": {
-    "derives_from": {
-      "symbol_id": "resolved-base-symbol-id"
-    }
-  }
-}
-```
-
 ---
 
-## 5) Find fields in `Config` that are private and have pointer-like types
+## 5) Find private fields in a file
+
+Since `scope.inside_class` is not implemented, scope to file and use flat key:
 
 ```json
 {
   "action": "find",
   "entity": "field",
   "scope": {
-    "inside_class": "Config"
+    "path": "src/config.cpp"
   },
   "where": {
-    "all_of": [
-      { "access": "private" },
-      {
-        "any_of": [
-          { "type": ".*\\*" },
-          { "type": "std::unique_ptr<.*>" },
-          { "type": "std::shared_ptr<.*>" }
-        ]
-      }
-    ]
+    "access": "private"
   },
   "fields": [
     "symbol_id",
@@ -589,57 +581,44 @@ Prefer exact symbol target if resolved:
 }
 ```
 
-Use this only if the backend supports pattern-like type matching. If not, split into separate exact queries.
+To further filter by type (e.g. pointers), inspect results client-side since regex is not supported.
 
 ---
 
-## 6) Find calls made inside methods of `Parser` that return `bool`
+## 6) Find calls in a file (multi-step for nested filters)
 
+Nested scope filters like `inside_function` + `inside_class` are **not supported**.
+Use a two-step approach:
+
+1. List methods of interest:
 ```json
 {
-  "action": "find",
-  "entity": "call",
-  "scope": {
-    "inside_class": "Parser"
-  },
-  "where": {
-    "inside_function": {
-      "all_of": [
-        { "entity": "method" },
-        { "return_type": "bool" }
-      ]
-    }
-  },
-  "fields": [
-    "symbol_id",
-    "qualified_name",
-    "location",
-    "source_excerpt"
-  ]
+  "action": "list",
+  "entity": "method",
+  "scope": { "path": "src/parser.cpp" },
+  "where": { "return_type": "bool" },
+  "fields": ["symbol_id", "qualified_name"]
 }
 ```
 
-If nested scope filters are not supported, do it in two steps:
-
-1. find matching methods of `Parser`
-2. query calls inside each method
+2. For each method, describe it with `include_source: true` to inspect its body.
 
 ---
 
-## 7) Find free functions in namespace `util` that take two parameters and return `int`
+## 7) Find functions matching return type and param types
+
+Use flat keys — no `all_of` needed:
 
 ```json
 {
   "action": "find",
   "entity": "function",
   "scope": {
-    "in_namespace": "util"
+    "path": "src/util.cpp"
   },
   "where": {
-    "all_of": [
-      { "return_type": "int" },
-      { "param_types": ["*", "*"] }
-    ]
+    "return_type": "int",
+    "param_types": ["int", "int"]
   },
   "fields": [
     "symbol_id",
@@ -651,21 +630,19 @@ If nested scope filters are not supported, do it in two steps:
 }
 ```
 
-If wildcard parameter matching is not supported, prefer exact `param_types` or use `cpp_describe_symbol` after a broader list query.
+Note: `param_types` requires exact type strings. Wildcard `"*"` is not supported.
 
 ---
 
-## 8) Find static fields named `instance` in any class
+## 8) Find static fields with a specific name
 
 ```json
 {
   "action": "find",
   "entity": "field",
   "where": {
-    "all_of": [
-      { "name": "instance" },
-      { "static": true }
-    ]
+    "name": "instance",
+    "static": true
   },
   "fields": [
     "symbol_id",
@@ -679,71 +656,56 @@ If wildcard parameter matching is not supported, prefer exact `param_types` or u
 
 ---
 
-## 9) Check whether any method named `clone` returns a smart pointer
+## 9) Check whether any method named `clone` exists
 
 ```json
 {
   "action": "exists",
   "entity": "method",
   "where": {
-    "all_of": [
-      { "name": "clone" },
-      {
-        "any_of": [
-          { "return_type": "std::unique_ptr<.*>" },
-          { "return_type": "std::shared_ptr<.*>" }
-        ]
-      }
-    ]
+    "name": "clone"
   }
 }
 ```
 
-Use pattern-like matching only if the server supports it.
+To also check return type, describe matched symbols individually since regex is not supported.
 
 ---
 
-## 10) Count calls to `push_back` inside `build_index`
+## 10) Count calls in a file
+
+Since `scope.inside_function` is not implemented, scope to the file:
 
 ```json
 {
   "action": "count",
   "entity": "call",
   "scope": {
-    "inside_function": "build_index"
+    "path": "src/indexer.cpp"
   },
   "where": {
-    "calls": {
-      "name": "push_back"
-    }
+    "name": "push_back"
   }
 }
 ```
 
+For relation-based counting, use `relations.calls` with a resolved symbol_id.
+
 ---
 
-## 11) Find methods inside `Session` that are either virtual or override, but not private
+## 11) Find virtual or override methods using `any_of`
 
 ```json
 {
   "action": "find",
   "entity": "method",
   "scope": {
-    "inside_class": "Session"
+    "path": "src/session.cpp"
   },
   "where": {
-    "all_of": [
-      {
-        "any_of": [
-          { "virtual": true },
-          { "override": true }
-        ]
-      },
-      {
-        "not": {
-          "access": "private"
-        }
-      }
+    "any_of": [
+      { "virtual": true },
+      { "override": true }
     ]
   },
   "fields": [
@@ -758,18 +720,18 @@ Use pattern-like matching only if the server supports it.
 }
 ```
 
-Use `not` only if the server supports it well. Otherwise query for public/protected explicitly.
+To exclude private results, filter client-side (since `not` is not implemented).
 
 ---
 
-## 12) Find variables inside `main` whose type is `std::string`
+## 12) Find variables with a specific type in a file
 
 ```json
 {
   "action": "find",
   "entity": "variable",
   "scope": {
-    "inside_function": "main"
+    "path": "src/main.cpp"
   },
   "where": {
     "type": "std::string"
@@ -785,17 +747,17 @@ Use `not` only if the server supports it well. Otherwise query for public/protec
 
 ---
 
-## 13) Find constructors of `Widget` that take exactly one parameter
+## 13) Find constructors with specific parameter types
 
 ```json
 {
   "action": "find",
   "entity": "constructor",
   "scope": {
-    "inside_class": "Widget"
+    "path": "src/widget.cpp"
   },
   "where": {
-    "param_types": ["*"]
+    "param_types": ["const std::string &"]
   },
   "fields": [
     "symbol_id",
@@ -806,48 +768,34 @@ Use `not` only if the server supports it well. Otherwise query for public/protec
 }
 ```
 
-If wildcard parameter lists are unsupported, first list constructors, then filter client-side.
+To find constructors with any single parameter, list all constructors and filter client-side by `param_types` length.
 
 ---
 
-## 14) Find all namespaces containing a symbol named `parse`
+## 14) Find namespaces (multi-step)
 
-```json
-{
-  "action": "find",
-  "entity": "namespace",
-  "where": {
-    "contains": {
-      "name": "parse"
-    }
-  },
-  "fields": [
-    "symbol_id",
-    "qualified_name",
-    "location"
-  ]
-}
-```
+Namespace containment queries are not directly supported. Use this approach:
 
-Use only if containment relations are supported. Otherwise:
-1. resolve or find `parse`
-2. inspect `qualified_name`
-3. derive the namespace from the result
+1. Resolve or find the target symbol
+2. Inspect `qualified_name` — extract the namespace prefix
+3. If needed, query `entity=namespace` to list available namespaces
 
 ---
 
-## 15) Find classes in files matching `parser` that derive from `Node`
+## 15) Find classes in files matching a glob that derive from a base
+
+Use `scope.path` with a glob pattern and `relations.derives_from`:
 
 ```json
 {
   "action": "find",
   "entity": "class",
   "scope": {
-    "path": "**/parser*"
+    "path": "src/*.cpp"
   },
   "where": {
-    "derives_from": {
-      "name": "Node"
+    "relations": {
+      "derives_from": "YAML::Node"
     }
   },
   "fields": [
@@ -858,9 +806,7 @@ Use only if containment relations are supported. Otherwise:
 }
 ```
 
-Use `scope.path` with a glob pattern to constrain by file.
-
-# Safe boolean composition patterns
+# Safe `where` composition patterns
 
 Use these structures consistently:
 
@@ -872,19 +818,21 @@ Use these structures consistently:
 }
 ```
 
-## All conditions must hold
+## Multiple conditions (AND)
+
+Use flat keys — they are AND'd automatically:
 
 ```json
 {
-  "all_of": [
-    { "entity": "method" },
-    { "const": true },
-    { "access": "public" }
-  ]
+  "access": "public",
+  "const": true,
+  "return_type": "std::string"
 }
 ```
 
-## Any condition may hold
+Do NOT use `all_of` — it is silently ignored.
+
+## Any condition may hold (OR)
 
 ```json
 {
@@ -895,17 +843,35 @@ Use these structures consistently:
 }
 ```
 
-## Negation
+## Relation filter
 
 ```json
 {
-  "not": {
-    "access": "private"
+  "relations": {
+    "derives_from": "YAML::Exception"
   }
 }
 ```
 
-Use negation only if the server supports it well.
+## Combining AND with OR
+
+Flat keys + `any_of` — flat keys are AND'd, then `any_of` adds an OR clause:
+
+```json
+{
+  "access": "public",
+  "any_of": [
+    { "virtual": true },
+    { "override": true }
+  ]
+}
+```
+
+This matches: public AND (virtual OR override).
+
+## Negation
+
+`not` is **not implemented**. To exclude results, filter client-side or restructure the query using inclusive filters.
 
 # Preferred multi-step plans for hard queries
 
@@ -914,30 +880,30 @@ Use negation only if the server supports it well.
 1. resolve the symbol
 2. inspect candidates
 3. choose one exact overload
-4. run `cpp_semantic_query` with `called_by`
+4. run `cpp_semantic_query` with `where.relations.called_by` = resolved symbol_id
 5. request only caller identity, signature, and location
 
 ## "Find all calls to X inside Y"
 
-1. resolve `Y`
-2. resolve `X`
-3. query `entity=call`
-4. constrain with `scope.inside_function=Y`
-5. constrain with `where.calls = X`
+Since `scope.inside_function` is not implemented:
+
+1. resolve `X`
+2. scope to the file containing `Y` using `scope.path`
+3. query `entity=call` with `where.relations.calls` = resolved X symbol_id
+4. inspect results to identify which are inside `Y` by location
 
 ## "Find all overrides of Base::f"
 
 1. resolve `Base::f`
-2. run `cpp_semantic_query` for methods with `overrides = resolved symbol`
+2. run `cpp_semantic_query` for methods with `where.relations.overrides` = resolved symbol_id
 3. request qualified names and locations
 
 ## "Find data members relevant to ownership"
 
-1. query `entity=field`
-2. scope to class if available
-3. narrow by `type`
-4. use `any_of` across raw pointer / unique_ptr / shared_ptr patterns
-5. request `type`, `access`, `location`
+1. query `entity=field` scoped to file containing the class
+2. narrow by `access` if needed
+3. inspect `type` field in results client-side to identify pointer-like types
+4. request `type`, `access`, `location`
 
 # Ambiguity handling
 
@@ -968,7 +934,10 @@ Do not:
 - search by bare name when you already have `symbol_id`
 - mix unrelated conditions into one broad query if a two-step flow is clearer
 - silently collapse overload sets without acknowledging ambiguity
-- assume regex support unless confirmed by schema
+- use `all_of` or `not` in `where` — they are silently ignored
+- put `derives_from`, `calls`, `overrides`, `called_by` as top-level `where` keys — wrap in `relations`
+- use `scope.inside_class`, `scope.inside_function`, or `scope.in_namespace` — silently ignored
+- assume regex support in filter values — all matching is exact
 - assume every nested `where` form exists; split into stages if uncertain
 
 # Good response behavior after tool calls
