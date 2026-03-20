@@ -12,9 +12,6 @@ from pathlib import Path
 # Map function names to golden output filenames
 FUNC_TO_EXPECTED = {
     "example_doctor": "doctor_parse_ok",
-    "example_resolve_load_ambiguous": "resolve_load_ambiguous",
-    "example_resolve_missing_name_error": "resolve_missing_name_error",
-    "example_resolve_loadfile_function": "resolve_loadfile_function",
     "example_semantic_list_functions_fields_limit": "semantic_list_functions_fields_limit",
     "example_semantic_count_calls_parse": "semantic_count_calls_parse",
     "example_semantic_exists_class_parse_false": "semantic_exists_class_parse_false",
@@ -23,8 +20,6 @@ FUNC_TO_EXPECTED = {
     "example_semantic_file_entity_parse": "semantic_file_entity_parse",
     "example_semantic_exists_override_emitfromevents": "semantic_exists_override_emitfromevents",
     "example_semantic_count_classes_node": "semantic_count_classes_node",
-    "example_describe_badconversion": "describe_badconversion",
-    "example_describe_missing_symbol": "describe_missing_symbol",
 }
 
 EXAMPLES_DIR = Path(__file__).parent

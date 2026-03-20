@@ -188,7 +188,7 @@ class TestSourceFilesFromCompileDb:
 
 
 # ---------------------------------------------------------------------------
-# parse_int / parse_cursor / dedupe_items / is_no_match_describe
+# parse_int / parse_cursor / dedupe_items
 # ---------------------------------------------------------------------------
 
 class TestParseInt:

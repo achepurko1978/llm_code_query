@@ -73,38 +73,6 @@ pub struct DoctorCheck {
     pub message: String,
 }
 
-// ---------------------------------------------------------------------------
-// Request types
-// ---------------------------------------------------------------------------
-
-#[derive(Debug, Clone, Deserialize)]
-pub struct ResolveSymbolRequest {
-    pub name: Option<String>,
-    pub entity: Option<String>,
-    pub qualified_name: Option<String>,
-    pub file: Option<String>,
-    pub param_types: Option<Vec<String>>,
-    pub limit: Option<i64>,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-pub struct SemanticQueryRequest {
-    pub action: Option<String>,
-    pub entity: Option<String>,
-    pub scope: Option<Value>,
-    pub r#where: Option<Value>,
-    pub limit: Option<i64>,
-    pub cursor: Option<String>,
-    pub fields: Option<Vec<String>>,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-pub struct DescribeSymbolRequest {
-    pub symbol_id: Option<String>,
-    pub include_relations: Option<bool>,
-    pub relation_limit: Option<i64>,
-}
-
 /// Helper to build a Location JSON value.
 pub fn location_json(file: &str, line: Option<u32>, column: Option<u32>) -> Value {
     let mut m = serde_json::Map::new();
