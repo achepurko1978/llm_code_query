@@ -278,7 +278,7 @@ class TestTargetFilesForTool:
     def test_semantic_query_with_scope_file(self, tmp_path: Path):
         f = tmp_path / "y.cpp"
         f.write_text("")
-        files, is_dir = srv.target_files_for_tool("cpp_semantic_query", {"scope": {"file": str(f)}}, self.all_files, tmp_path)
+        files, is_dir = srv.target_files_for_tool("cpp_semantic_query", {"scope": {"path": str(f)}}, self.all_files, tmp_path)
         assert files == [str(f.resolve())]
         assert is_dir is False
 
@@ -304,7 +304,7 @@ class TestTargetFilesForTool:
         d = tmp_path / "lib"
         d.mkdir()
         all_files = [str(d / "x.cpp"), str(tmp_path / "main.cpp")]
-        files, is_dir = srv.target_files_for_tool("cpp_semantic_query", {"scope": {"file": str(d)}}, all_files, tmp_path)
+        files, is_dir = srv.target_files_for_tool("cpp_semantic_query", {"scope": {"path": str(d)}}, all_files, tmp_path)
         assert files == [str(d / "x.cpp")]
         assert is_dir is True
 
@@ -315,15 +315,41 @@ class TestTargetFilesForTool:
         assert files == []
         assert is_dir is True
 
+    def test_semantic_query_with_glob_pattern(self, tmp_path: Path):
+        src = tmp_path / "src"
+        src.mkdir()
+        all_files = [str(src / "a.h"), str(src / "b.cpp"), str(src / "c.h")]
+        glob_pat = str(src / "*.h")
+        files, is_dir = srv.target_files_for_tool(
+            "cpp_semantic_query", {"scope": {"path": glob_pat}}, all_files, tmp_path)
+        assert sorted(files) == sorted([str(src / "a.h"), str(src / "c.h")])
+        assert is_dir is True
+
+    def test_semantic_query_with_relative_glob(self, tmp_path: Path):
+        src = tmp_path / "src"
+        src.mkdir()
+        all_files = [str(src / "a.h"), str(src / "b.cpp")]
+        files, is_dir = srv.target_files_for_tool(
+            "cpp_semantic_query", {"scope": {"path": "src/*.h"}}, all_files, tmp_path)
+        assert files == [str(src / "a.h")]
+        assert is_dir is True
+
+    def test_glob_no_matches(self, tmp_path: Path):
+        all_files = [str(tmp_path / "a.cpp")]
+        files, is_dir = srv.target_files_for_tool(
+            "cpp_semantic_query", {"scope": {"path": "src/*.xyz"}}, all_files, tmp_path)
+        assert files == []
+        assert is_dir is True
+
 
 class TestStripDirScope:
-    def test_semantic_query_strips_file_from_scope(self):
-        args = {"action": "list", "entity": "function", "scope": {"file": "dir", "extra": "val"}}
+    def test_semantic_query_strips_path_from_scope(self):
+        args = {"action": "list", "entity": "function", "scope": {"path": "dir", "extra": "val"}}
         result = srv._strip_dir_scope(args, "cpp_semantic_query")
         assert result == {"action": "list", "entity": "function", "scope": {"extra": "val"}}
 
     def test_semantic_query_removes_empty_scope(self):
-        args = {"action": "list", "entity": "function", "scope": {"file": "dir"}}
+        args = {"action": "list", "entity": "function", "scope": {"path": "dir"}}
         result = srv._strip_dir_scope(args, "cpp_semantic_query")
         assert result == {"action": "list", "entity": "function"}
         assert "scope" not in result
@@ -334,9 +360,9 @@ class TestStripDirScope:
         assert result == {"name": "add"}
 
     def test_does_not_mutate_original(self):
-        args = {"action": "list", "scope": {"file": "dir"}}
+        args = {"action": "list", "scope": {"path": "dir"}}
         srv._strip_dir_scope(args, "cpp_semantic_query")
-        assert args["scope"] == {"file": "dir"}
+        assert args["scope"] == {"path": "dir"}
 
     def test_no_scope_passthrough(self):
         args = {"action": "list", "entity": "function"}
@@ -347,6 +373,31 @@ class TestStripDirScope:
         args = {"symbol_id": "s1"}
         result = srv._strip_dir_scope(args, "cpp_describe_symbol")
         assert result == args
+
+
+class TestNormalizeScopePath:
+    def test_path_key_unchanged(self):
+        args = {"scope": {"path": "src/foo.cpp"}}
+        assert srv._normalize_scope_path(args) is args
+
+    def test_legacy_file_key_migrated(self):
+        args = {"scope": {"file": "src/foo.cpp"}}
+        result = srv._normalize_scope_path(args)
+        assert result["scope"] == {"path": "src/foo.cpp"}
+
+    def test_legacy_directory_key_migrated(self):
+        args = {"scope": {"directory": "src/"}}
+        result = srv._normalize_scope_path(args)
+        assert result["scope"] == {"path": "src/"}
+
+    def test_no_scope_passthrough(self):
+        args = {"action": "list"}
+        assert srv._normalize_scope_path(args) is args
+
+    def test_preserves_other_scope_keys(self):
+        args = {"scope": {"file": "src/foo.cpp", "in_namespace": "ns"}}
+        result = srv._normalize_scope_path(args)
+        assert result["scope"] == {"path": "src/foo.cpp", "in_namespace": "ns"}
 
 
 class TestNormalizeIncludeSourceFromFields:
@@ -578,8 +629,8 @@ class TestRouteToolCall:
         assert result["exists"] is False
 
     @mock.patch("mcp_server.run_backend")
-    def test_directory_scope_strips_file_from_backend_args(self, mock_be, tmp_path: Path):
-        """When scope.file is a directory, backend should NOT receive scope.file."""
+    def test_directory_scope_strips_path_from_backend_args(self, mock_be, tmp_path: Path):
+        """When scope.path is a directory, backend should NOT receive scope.path."""
         d = tmp_path / "src"
         d.mkdir()
         src1, src2 = str(d / "a.cpp"), str(d / "b.cpp")
@@ -587,15 +638,15 @@ class TestRouteToolCall:
         mock_be.return_value = {"status": "ok", "items": [{"symbol_id": "s1"}], "warnings": []}
         result = srv.route_tool_call(Path("x"), "bd", tmp_path, all_files,
                                      "cpp_semantic_query",
-                                     {"action": "list", "entity": "function", "scope": {"file": str(d)}}, 10)
+                                     {"action": "list", "entity": "function", "scope": {"path": str(d)}}, 10)
         assert result["status"] == "ok"
         # Backend should have been called twice (once per file in dir)
         assert mock_be.call_count == 2
-        # The call_args passed to backend should NOT contain scope.file
+        # The call_args passed to backend should NOT contain scope.path
         for call in mock_be.call_args_list:
             args_obj = call[0][4]  # 5th positional arg: args_obj
             scope = args_obj.get("scope", {})
-            assert "file" not in scope
+            assert "path" not in scope
 
 
 # ---------------------------------------------------------------------------

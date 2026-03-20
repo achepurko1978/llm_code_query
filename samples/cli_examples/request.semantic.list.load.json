@@ -2,14 +2,15 @@
   "action": "list",
   "entity": "method",
   "scope": {
-    "file": "samples/cpp/src/simplekey.cpp"
+    "path": "samples/cpp/src"
   },
   "where": {
-    "return_type": "void"
+    "return_type": "std::string"
   },
   "fields": [
     "symbol_id",
     "extent",
-    "source"
+    "source",
+    "location"
   ]
 }

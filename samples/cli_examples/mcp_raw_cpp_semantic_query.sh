@@ -4,7 +4,7 @@ set -euo pipefail
 WORKSPACE_ROOT="${1:-/workspace}"
 BUILD_DIR="${2:-$WORKSPACE_ROOT/samples/cpp/build-rust-tests}"
 CLANG_SCRIPT="${3:-$WORKSPACE_ROOT/clang_mcp_rs/target/release/clang_mcp}"
-REQUEST_JSON="${4:-{\"action\":\"list\",\"entity\":\"function\",\"scope\":{\"file\":\"samples/cpp/src/parse.cpp\"},\"where\":{\"name\":\"Load\"},\"fields\":[\"symbol_id\",\"qualified_name\"],\"limit\":5}}"
+REQUEST_JSON="${4:-{\"action\":\"list\",\"entity\":\"function\",\"scope\":{\"path\":\"samples/cpp/src/parse.cpp\"},\"where\":{\"name\":\"Load\"},\"fields\":[\"symbol_id\",\"qualified_name\"],\"limit\":5}}"
 
 if [[ ! -f "$BUILD_DIR/compile_commands.json" ]]; then
   cmake -S "$WORKSPACE_ROOT/samples/cpp" -B "$BUILD_DIR" -D CMAKE_EXPORT_COMPILE_COMMANDS=ON >/dev/null

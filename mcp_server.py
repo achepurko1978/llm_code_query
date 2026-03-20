@@ -6,6 +6,7 @@ Uses the official MCP Python SDK for protocol handling and stdio transport.
 from __future__ import annotations
 
 import argparse
+import fnmatch
 import json
 import logging
 import subprocess
@@ -235,18 +236,28 @@ def is_no_match_describe(payload: dict[str, Any]) -> bool:
 # Tool routing
 # ---------------------------------------------------------------------------
 
+def _is_glob(s: str) -> bool:
+    """Return True if *s* contains glob meta-characters."""
+    return any(ch in s for ch in ('*', '?', '['))
+
+
 def target_files_for_tool(cmd: str, call_args: dict[str, Any], all_files: list[str],
                           workspace_root: Path) -> tuple[list[str], bool]:
-    """Return (target_files, scope_was_directory)."""
-    file_str: str | None = None
+    """Return (target_files, scope_was_directory_or_glob)."""
+    path_str: str | None = None
     if cmd == "cpp_resolve_symbol":
-        file_str = call_args.get("file")
+        path_str = call_args.get("file")
     elif cmd == "cpp_semantic_query":
         scope = call_args.get("scope")
         if isinstance(scope, dict):
-            file_str = scope.get("file")
-    if isinstance(file_str, str) and file_str:
-        p = norm_path(file_str, workspace_root)
+            path_str = scope.get("path")
+    if isinstance(path_str, str) and path_str:
+        if _is_glob(path_str):
+            # Resolve glob relative to workspace root
+            pattern = str(workspace_root / path_str) if not Path(path_str).is_absolute() else path_str
+            matched = [f for f in all_files if fnmatch.fnmatch(f, pattern)]
+            return matched, True
+        p = norm_path(path_str, workspace_root)
         if p.is_file():
             return [str(p)], False
         if p.is_dir():
@@ -257,12 +268,12 @@ def target_files_for_tool(cmd: str, call_args: dict[str, Any], all_files: list[s
 
 
 def _strip_dir_scope(call_args: dict[str, Any], cmd: str) -> dict[str, Any]:
-    """Remove scope.file from args when targeting was already resolved to a directory."""
+    """Remove scope.path from args when targeting was already resolved to a directory/glob."""
     args = {**call_args}
     if cmd == "cpp_semantic_query":
         scope = args.get("scope")
-        if isinstance(scope, dict) and "file" in scope:
-            new_scope = {k: v for k, v in scope.items() if k != "file"}
+        if isinstance(scope, dict) and "path" in scope:
+            new_scope = {k: v for k, v in scope.items() if k != "path"}
             if new_scope:
                 args["scope"] = new_scope
             else:
@@ -289,12 +300,17 @@ def _aggregate_backends(clang_script: Path, build_dir: str, workspace_root: Path
     return all_items, all_warnings, had_error
 
 
-def _normalize_scope_directory(call_args: dict[str, Any]) -> dict[str, Any]:
-    """Normalize scope.directory to scope.file so callers can use either key."""
+def _normalize_scope_path(call_args: dict[str, Any]) -> dict[str, Any]:
+    """Normalize legacy scope.file / scope.directory to scope.path."""
     scope = call_args.get("scope")
-    if isinstance(scope, dict) and "directory" in scope and "file" not in scope:
-        new_scope = {**scope, "file": scope["directory"]}
-        del new_scope["directory"]
+    if not isinstance(scope, dict):
+        return call_args
+    if "path" in scope:
+        return call_args
+    legacy = scope.get("file") or scope.get("directory")
+    if legacy:
+        new_scope = {k: v for k, v in scope.items() if k not in ("file", "directory")}
+        new_scope["path"] = legacy
         return {**call_args, "scope": new_scope}
     return call_args
 
@@ -323,7 +339,7 @@ def route_tool_call(clang_script: Path, build_dir: str, workspace_root: Path,
                     timeout_sec: int) -> dict[str, Any]:
     if not files:
         return _backend_error("NO_SOURCE_FILES", "no source files found in compile_commands.json")
-    call_args = _normalize_scope_directory(call_args)
+    call_args = _normalize_scope_path(call_args)
     call_args = _normalize_include_source_from_fields(cmd, call_args)
     targets, dir_scope = target_files_for_tool(cmd, call_args, files, workspace_root)
     if not targets:

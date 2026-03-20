@@ -277,13 +277,14 @@ pub fn is_in_file(entry: &SymbolEntry, src: &str) -> bool {
 pub fn passes_scope(entry: &SymbolEntry, scope: Option<&serde_json::Map<String, Value>>) -> bool {
     let scope = match scope { Some(s) => s, None => return true };
 
-    // Accept both "file" and "directory" as the scope key
-    let file_scope = scope.get("file")
+    // Accept "path" (preferred), "file" and "directory" as the scope key
+    let path_scope = scope.get("path")
+        .or_else(|| scope.get("file"))
         .or_else(|| scope.get("directory"))
         .and_then(|v| v.as_str());
-    if let Some(file) = file_scope {
+    if let Some(path) = path_scope {
         match &entry.file_norm {
-            Some(f) if *f == norm(file) => {}
+            Some(f) if *f == norm(path) => {}
             _ => return false,
         }
     }
@@ -490,11 +491,11 @@ mod tests {
     fn test_passes_scope_file_filter() {
         let idx = build_functions_index();
         let mut scope = serde_json::Map::new();
-        scope.insert("file".to_string(), Value::String(PARSE_CPP.to_string()));
+        scope.insert("path".to_string(), Value::String(PARSE_CPP.to_string()));
         for e in &idx.symbols {
             assert!(passes_scope(e, Some(&scope)));
         }
-        scope.insert("file".to_string(), Value::String(PARSER_CPP.to_string()));
+        scope.insert("path".to_string(), Value::String(PARSER_CPP.to_string()));
         for e in &idx.symbols {
             assert!(!passes_scope(e, Some(&scope)));
         }

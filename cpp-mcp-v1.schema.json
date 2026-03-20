@@ -296,16 +296,12 @@
     },
     "Scope": {
       "type": "object",
-      "description": "WHERE to look — narrows the search to a file, directory, function, class, or namespace. Use scope.file for file/directory filtering. Do NOT put file paths in 'where'.",
+      "description": "WHERE to look — narrows the search to a file, directory, or glob pattern, plus optional function, class, or namespace. Use scope.path for file/directory/glob filtering. Do NOT put file paths in 'where'.",
       "additionalProperties": false,
       "properties": {
-        "file": {
+        "path": {
           "type": "string",
-          "description": "Workspace-root-relative file path or directory path (e.g. 'VSC/FdcSP/src/Foo.cpp' or 'VSC/FdcSP/src'). This is the ONLY place to specify file/directory scope — never put file paths in the 'where' filter."
-        },
-        "directory": {
-          "type": "string",
-          "description": "Alias for 'file' — workspace-root-relative directory path (e.g. 'VSC/FdcSP/src'). Prefer using 'file' which accepts both files and directories."
+          "description": "Workspace-root-relative file path, directory path, or glob pattern (e.g. 'src/Foo.cpp', 'src/', 'src/*.h', 'src/**/*.cpp'). This is the ONLY place to specify file/directory scope — never put file paths in the 'where' filter."
         },
         "inside_function": {
           "type": "string",
@@ -345,7 +341,7 @@
     },
     "Where": {
       "type": "object",
-      "description": "WHAT to match — filters symbols by their properties (name, return_type, access, etc.). Do NOT put file paths here; use 'scope.file' instead.",
+      "description": "WHAT to match — filters symbols by their properties (name, return_type, access, etc.). Do NOT put file paths here; use 'scope.path' instead.",
       "additionalProperties": false,
       "properties": {
         "name": {
@@ -510,7 +506,7 @@
         },
         "scope": {
           "$ref": "#/$defs/Scope",
-          "description": "WHERE to look: narrows search to a file, directory, class, or namespace. Put file/directory paths here in scope.file, NOT in 'where'."
+          "description": "WHERE to look: narrows search to a file, directory, glob pattern, class, or namespace. Put file/directory/glob paths here in scope.path, NOT in 'where'."
         },
         "where": {
           "$ref": "#/$defs/Where",

@@ -15,7 +15,7 @@ Defaults:
 
 Examples:
     mcp_raw_tool_call.sh
-    mcp_raw_tool_call.sh cpp_semantic_query '{"action":"list","entity":"function","scope":{"file":"samples/cpp/src/parse.cpp"},"where":{"name":"Load"},"limit":5}'
+    mcp_raw_tool_call.sh cpp_semantic_query '{"action":"list","entity":"function","scope":{"path":"samples/cpp/src/parse.cpp"},"where":{"name":"Load"},"limit":5}'
     mcp_raw_tool_call.sh /workspace /workspace/samples/cpp/build-rust-tests /workspace/clang_mcp_rs/target/release/clang_mcp cpp_resolve_symbol '{"name":"Load"}'
     mcp_raw_tool_call.sh /workspace /workspace/samples/cpp/build-rust-tests /workspace/clang_mcp_rs/target/release/clang_mcp cpp_semantic_query @/workspace/request.json
 EOF
@@ -31,7 +31,7 @@ is_tool_name() {
 
 if [[ -n "${1:-}" ]] && is_tool_name "$1"; then
     TOOL_NAME="$1"
-    ARGS_JSON="${2:-{\"action\":\"list\",\"entity\":\"function\",\"scope\":{\"file\":\"samples/cpp/src/parse.cpp\"},\"where\":{\"name\":\"Load\"},\"fields\":[\"symbol_id\",\"qualified_name\"],\"limit\":5}}"
+    ARGS_JSON="${2:-{\"action\":\"list\",\"entity\":\"function\",\"scope\":{\"path\":\"samples/cpp/src/parse.cpp\"},\"where\":{\"name\":\"Load\"},\"fields\":[\"symbol_id\",\"qualified_name\"],\"limit\":5}}"
     WORKSPACE_ROOT="/workspace"
     BUILD_DIR="$WORKSPACE_ROOT/samples/cpp/build-rust-tests"
     CLANG_SCRIPT="$WORKSPACE_ROOT/clang_mcp_rs/target/release/clang_mcp"
@@ -40,7 +40,7 @@ else
     BUILD_DIR="${2:-$WORKSPACE_ROOT/samples/cpp/build-rust-tests}"
     CLANG_SCRIPT="${3:-$WORKSPACE_ROOT/clang_mcp_rs/target/release/clang_mcp}"
     TOOL_NAME="${4:-cpp_semantic_query}"
-    ARGS_JSON="${5:-{\"action\":\"list\",\"entity\":\"function\",\"scope\":{\"file\":\"samples/cpp/src/parse.cpp\"},\"where\":{\"name\":\"Load\"},\"fields\":[\"symbol_id\",\"qualified_name\"],\"limit\":5}}"
+    ARGS_JSON="${5:-{\"action\":\"list\",\"entity\":\"function\",\"scope\":{\"path\":\"samples/cpp/src/parse.cpp\"},\"where\":{\"name\":\"Load\"},\"fields\":[\"symbol_id\",\"qualified_name\"],\"limit\":5}}"
 fi
 
 if [[ ! -f "$BUILD_DIR/compile_commands.json" ]]; then

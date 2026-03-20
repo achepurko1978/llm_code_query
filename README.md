@@ -223,7 +223,7 @@ use the helper script:
 bash /workspace/samples/cli_examples/mcp_raw_tool_call.sh --help
 
 # Shorthand form: tool name + JSON args
-bash /workspace/samples/cli_examples/mcp_raw_tool_call.sh cpp_semantic_query '{"action":"list","entity":"function","scope":{"file":"samples/cpp/src/parse.cpp"},"where":{"name":"Load"},"limit":5}'
+bash /workspace/samples/cli_examples/mcp_raw_tool_call.sh cpp_semantic_query '{"action":"list","entity":"function","scope":{"path":"samples/cpp/src/parse.cpp"},"where":{"name":"Load"},"limit":5}'
 
 # Full form: workspace_root build_dir clang_script tool_name JSON args
 bash /workspace/samples/cli_examples/mcp_raw_tool_call.sh /workspace /workspace/samples/cpp/build-rust-tests /workspace/clang_mcp_rs/target/release/clang_mcp cpp_resolve_symbol '{"name":"Load"}'
