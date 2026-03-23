@@ -9,5 +9,9 @@
 - Do not silently collapse ambiguous matches or overloads.
 - If MCP fails, say so explicitly, then fall back to text search only if needed.
 - Only request the fields explicitly mentioned in the user's request.
+- **Inverse-relation queries (`called_by`, broad `overrides`)**: ALWAYS grep/ripgrep for the
+  function name first to find candidate files, then run `cpp_semantic_query` scoped to only
+  those files. Even moderate scopes (50+ files) are noticeably slow without this. Rule of
+  thumb: if scope could match more than ~20 files, grep first.
 
 ---

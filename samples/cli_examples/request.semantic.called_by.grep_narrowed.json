@@ -1,0 +1,13 @@
+{
+  "action": "find",
+  "entity": "function",
+  "scope": {
+    "path": "samples/cpp/src/parse.cpp"
+  },
+  "where": {
+    "relations": {
+      "called_by": "YAML::Load"
+    }
+  },
+  "fields": ["symbol_id", "qualified_name", "signature", "location"]
+}

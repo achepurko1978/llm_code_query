@@ -56,6 +56,24 @@ Preferred flow:
 1. grep for `foo` to identify which file it lives in
 2. call `cpp_semantic_query` with `scope.path` set to that file
 
+## Grep-first narrowing for `called_by` (MANDATORY)
+
+`called_by` is an inverse relation — callers live in arbitrary files. The backend
+parses each file from scratch with no caching, so even moderate scopes (50+ files)
+become noticeably slow, and large scopes (hundreds+ files) are prohibitive.
+
+**Always** use this pattern when `called_by` could touch more than ~20 files:
+
+1. run `grep_search` or `rg -l 'functionName' src/ --glob '*.cpp'` to find files that mention the name (~instant)
+2. run `cpp_semantic_query` with `scope.path` targeting **only** the grep-matched files
+3. merge and deduplicate results
+
+This turns a potentially minutes-to-hours scan into a seconds-long targeted query.
+Even on a moderate codebase (50–200 files), the grep-first approach avoids unnecessary
+waits of 30s–2min that would otherwise frustrate the user.
+
+The same applies to broad `overrides` searches across multiple files.
+
 ## Scope-first pattern
 
 Use this when the user asks for things "inside" a file, directory, or matching a glob pattern.
@@ -834,11 +852,24 @@ This matches: public AND (virtual OR override).
 
 ## "Find all callers of a specific overload"
 
-1. resolve the symbol
-2. inspect candidates
-3. choose one exact overload
-4. run `cpp_semantic_query` with `where.relations.called_by` = resolved symbol_id
+**WARNING**: `called_by` is an inverse-relation query. The callers can live in any file,
+so a broad `scope.path` glob will parse every matching file sequentially with no caching.
+Even on moderate codebases (50+ files) this adds up to noticeable delays (30s–2min).
+On large codebases (hundreds+ files) it becomes prohibitively slow. **Always** use the
+grep-first narrowing pattern below unless you are certain the scope covers fewer than ~20 files.
+
+1. resolve the symbol — get its exact name or qualified_name
+2. if there are overloads, inspect candidates and choose one exact overload
+3. **grep / ripgrep** the workspace for the function name to discover which files mention it:
+   - use `grep_search` or run `rg -l 'functionName' src/ --glob '*.cpp'` in a terminal
+   - this is instant even on 30k-file codebases
+4. run `cpp_semantic_query` with `scope.path` set to **each matched file** (or a narrow glob covering them)
+   and `where.relations.called_by` = resolved symbol_id
 5. request only caller identity, signature, and location
+6. merge and deduplicate results across files
+
+**Never** use a broad glob like `src/**/*.cpp` for `called_by` without grep pre-filtering.
+Even `src/*.cpp` should be pre-filtered with grep if the directory has more than ~20 files.
 
 ## "Find all calls to X inside Y"
 
@@ -895,6 +926,8 @@ Do not:
 - use `scope.inside_class`, `scope.inside_function`, or `scope.in_namespace` — silently ignored
 - assume regex support in filter values — all matching is exact
 - assume every nested `where` form exists; split into stages if uncertain
+- use a broad glob or directory scope with `called_by` without first running grep to narrow the file set — even 50 files is noticeably slow; always grep-first unless scope is < ~20 files
+- skip the grep pre-filter step for any inverse-relation query (`called_by`, broad `overrides` searches) when the scope spans more than ~20 files
 
 # Good response behavior after tool calls
 
@@ -938,6 +971,74 @@ When reporting results:
 1. grep to find the file containing the class
 2. `cpp_semantic_query` with `{"entity": "class", "action": "find", "scope": {"path": "..."}, "where": {"name": "ClassName"}, "include_source": true}`
 3. the response contains the class source and location
+
+## Recipe: find all callers of a function across the project (grep-first `called_by`)
+
+This is the **mandatory** pattern for any project-wide `called_by` query.
+
+1. **resolve the target** — get the function's name (e.g. `loadFile`) and its `symbol_id` or `qualified_name` via a scoped semantic query on its own file
+2. **grep to find candidate files** — run `grep_search` or `rg -l 'loadFile' src/ --glob '*.cpp'` to find all `.cpp` files that textually mention the function name; this returns instantly even on huge codebases
+3. **run narrow semantic queries** — for each file (or small batch via glob) returned by grep:
+   ```json
+   {
+     "action": "find",
+     "entity": "function",
+     "scope": { "path": "<matched-file>" },
+     "where": {
+       "relations": { "called_by": "<symbol_id or qualified_name>" }
+     },
+     "fields": ["symbol_id", "qualified_name", "signature", "location"]
+   }
+   ```
+4. **merge and deduplicate** results across files (prefer definition locations over declaration locations)
+
+Why: The backend parses each file from scratch with no caching. A broad `scope.path` like `src/**/*.cpp` against 5000 files means 5000 sequential parses. Grep narrows this to the ~5–20 files that actually reference the name, cutting query time from hours to seconds.
+
+## Recipe: find all callers within a known directory
+
+When callers are expected within a small directory (< ~20 files):
+
+1. resolve the target symbol
+2. use `scope.path` with the directory: `"scope": {"path": "src/io/"}`
+3. query with `where.relations.called_by`
+
+This is acceptable without grep pre-filtering only because the file count is small.
+If the directory has more than ~20 files, use the grep-first pattern instead.
+
+# Scalability guidance
+
+## Per-file architecture
+
+The backend indexes **one file at a time per request** with **no caching**. Multi-file queries
+(via `scope.path` globs or directories) invoke the backend sequentially for each matching file.
+This is fine for narrow scopes but becomes a bottleneck for broad scopes.
+
+## Cost model
+
+| Query type | Scope | Approximate cost |
+|---|---|---|
+| Any query | Single file | ~0.1–2s (fast) |
+| `calls`, `derives_from` | Single file | ~0.1–2s (the caller/base is in the scoped file) |
+| `called_by`, `overrides` | Single file | ~0.1–2s (but only finds callers within that one TU) |
+| `called_by` | Moderate glob (50–200 files) | **30s–2min** (noticeable, use grep pre-filter) |
+| `called_by` | Large glob (500+ files) | **Minutes to hours** (use grep pre-filter) |
+| `called_by` | Grep-narrowed (5–20 files) | ~5–30s (fast enough) |
+
+**Rule of thumb**: if a `called_by` scope could match more than ~20 files, grep first.
+
+## Inverse-relation queries require grep pre-filtering
+
+`called_by` is inherently inverse — callers are scattered across arbitrary files. You cannot know
+which files call X without inspecting them. **Always run grep first** to reduce the file set,
+even on moderate codebases. A 100-file directory scope that seems "not that big" still means
+100 sequential parses at ~0.5–2s each = up to 3 minutes of waiting.
+
+The same applies to broad `overrides` searches when the scope spans more than ~20 files.
+
+## Forward-relation queries are naturally scoped
+
+`calls` and `derives_from` are forward — the data lives in the file you're already looking at.
+These are always fast and don't need grep pre-filtering.
 
 # Final preference order
 
